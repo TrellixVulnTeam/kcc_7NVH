@@ -6,23 +6,23 @@ from torch.autograd import Variable
 
 
 class StyleTransferTransformer(nn.Module):
-    def __init__(self, encoder, tst_decoder, style_ratio):
+    def __init__(self, encoder, tst_decoder, d_model, d_hidden, style_ratio):
         super(StyleTransferTransformer, self).__init__()
+
         self.encoder = encoder
         self.tst_decoder = tst_decoder
         self.style_ratio = style_ratio
 
-        self.context2mu = nn.Linear()
-        self.context2logv = nn.Linear()
+        self.context2mu = nn.Linear(d_model, d_hidden)
+        self.context2logv = nn.Linear(d_model, d_hidden)
 
     def reparameterization(self, encoder_out):
-        #TODO 이거 뭐쓸지 더 조사하기
         mu = self.context2mean(encoder_out)
         log_v = self.context2logv(encoder_out)
 
-        std = log_v.mul(0.5).exp_()
-        eps = Variable(std.data.new(std.size()).normal_())
-        z = eps.mul(std).add_(mu)
+        std = torch.exp(0.5 * log_v)
+        eps = torch.randn_like(std)
+        z = mu + (eps * std)
 
         return z, mu, log_v
 
@@ -40,16 +40,61 @@ class StyleTransferTransformer(nn.Module):
 
         total_latent = torch.cat(content_c, style_a)
 
-        out = self.tst_decoder(total_latent, tgt)
+        #TODO add가 맞나?
+        encoder_out = torch.add(encoder_out, total_latent)
+
+        tst_out = self.tst_decoder(tgt, encoder_out)
+
+        return tst_out, total_latent, content_c, content_mu, content_logv, style_a, style_mu, style_logv
+
+
+class MachineTranslationTransformer(nn.Module):
+    def __init__(self, encoder, nmt_decoder, d_model, d_hidden):
+        super(MachineTranslationTransformer, self).__init__()
+        self.encoder = encoder
+        self.nmt_decoder = nmt_decoder
 
 
 
+    def forward(self, src, tgt):
+        encoder_out = self.encoder(src)
+        nmt_out = self.nmt_decoder(tgt, encoder_out)
+
+        return nmt_out
 
 
-class EncoderLayer(nn.Module):
+
+class Encoder(nn.Module):
     def __init__(self):
-        super(EncoderLayer, self).__init__()
-        self.encoder_layer = TransformerEncoderLayer()
-        self.encoder = TransformerEncoder()
+        super(Encoder, self).__init__()
+        self.encoder_layer = TransformerEncoderLayer(d_model=512, nhead=8)
+        self.encoder = TransformerEncoder(self.encoder_layer, num_layers=6)
 
-    def forward(self):
+    def forward(self, src):
+        encoder_out = self.encoder(src)
+
+        return encoder_out
+
+
+class TSTDecoder(nn.Module):
+    def __init__(self):
+        super(TSTDecoder, self).__init__()
+        self.decoder_layer = TransformerDecoderLayer(d_model=512, nhead=8)
+        self.tst_decoder = TransformerDecoder(self.decoder_layer, num_layers=6)
+
+    def forward(self, encoder_out, tgt):
+        tst_out = self.tst_decoder(tgt, encoder_out)
+
+        return tst_out
+
+
+class NMTDecoder(nn.Module):
+    def __init__(self):
+        super(NMTDecoder, self).__init__()
+        self.decoder_layer = TransformerDecoderLayer(d_model=512, nhead=8)
+        self.nmt_decoder = TransformerDecoder(self.decoder_layer, num_layers=6)
+
+    def forward(self, encoder_out, tgt):
+        nmt_out = self.nmt_decoder(tgt, encoder_out)
+
+        return nmt_out
