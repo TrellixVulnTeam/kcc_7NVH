@@ -12,7 +12,8 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
 from .model import StyleTransferTransformer, MachineTranslationTransformer, Encoder, TSTDecoder, NMTDecoder
-from .loss import loss_fn
+from .loss import bce_loss, kl_loss
+from .custom_dataset import custom_dataset
 
 def train_one_epoch(tst_model, nmt_model, epoch, data_loader, tst_optimizer, nmt_optimizer, device):
     tst_model.train()
@@ -27,8 +28,11 @@ def train_one_epoch(tst_model, nmt_model, epoch, data_loader, tst_optimizer, nmt
 
             tst_out, total_latent, content_c, content_mu, content_logv, style_a, style_mu, style_logv = tst_model(X)
 
-            MSE_loss, KL_loss, KL_weight = loss_fn(tst_out, y, style_mu, style_logv, epoch, 0.0025, 2500)
-            loss = (MSE_loss + KL_loss*KL_weight)
+            # TODO Loss 재정의
+            BCE_loss = bce_loss(tst_out, y)
+            KL_loss, KL_weight = kl_loss(style_mu, style_logv, epoch, 0.0025, 2500)
+
+            loss = (BCE_loss + KL_loss*KL_weight)
             loss_value = loss.item()
             train_loss += loss_value
 
@@ -53,8 +57,10 @@ def evaluate(tst_model, nmt_model, epoch, data_loader, device):
 
             tst_out, total_latent, content_c, content_mu, content_logv, style_a, style_mu, style_logv = tst_model(X)
 
-            MSE_loss, KL_loss, KL_weight = loss_fn(tst_out, y, style_mu, style_logv, epoch, 0.0025, 2500)
-            loss = (MSE_loss + KL_loss * KL_weight)
+            BCE_loss = bce_loss(tst_out, y)
+            KL_loss, KL_weight = kl_loss(style_mu, style_logv, epoch, 0.0025, 2500)
+
+            loss = (BCE_loss + KL_loss * KL_weight)
             loss_value = loss.item()
             valid_loss += loss_value
 
@@ -70,6 +76,7 @@ def train():
     print(f'Initializing Device: {device}')
 
     # Data Setting
+
 
 
 

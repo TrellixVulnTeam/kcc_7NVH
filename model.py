@@ -6,10 +6,10 @@ from torch.autograd import Variable
 
 
 class StyleTransferTransformer(nn.Module):
-    def __init__(self, encoder, tst_decoder, d_model, d_hidden, style_ratio):
+    def __init__(self, encoder, tst_decoder, d_model, d_hidden, style_ratio, dropout):
         super(StyleTransferTransformer, self).__init__()
 
-        self.encoder = encoder
+        self.encoder = nn.LSTM(input_size=d_model, hidden_size=d_hidden, dropout=dropout)
         self.tst_decoder = tst_decoder
         self.style_ratio = style_ratio
 
@@ -34,9 +34,6 @@ class StyleTransferTransformer(nn.Module):
 
         content_c, content_mu, content_logv = self.reparameterization(context_c)
         style_a, style_mu, style_logv = self.reparameterization(context_a)
-
-        # TODO binary cross entropy
-        # style_loss =
 
         total_latent = torch.cat(content_c, style_a)
 
@@ -63,17 +60,18 @@ class MachineTranslationTransformer(nn.Module):
         return nmt_out
 
 
-
-class Encoder(nn.Module):
-    def __init__(self):
-        super(Encoder, self).__init__()
-        self.encoder_layer = TransformerEncoderLayer(d_model=512, nhead=8)
-        self.encoder = TransformerEncoder(self.encoder_layer, num_layers=6)
-
-    def forward(self, src):
-        encoder_out = self.encoder(src)
-
-        return encoder_out
+#
+# class Encoder(nn.Module):
+#     def __init__(self):
+#         super(Encoder, self).__init__()
+#         # self.encoder_layer = TransformerEncoderLayer(d_model=512, nhead=8)
+#         # self.encoder = TransformerEncoder(self.encoder_layer, num_layers=6)
+#         self.encoder = nn.LSTM(input_size=embed_size, hidden_size=embed_size, dropout=dropout)
+#
+#     def forward(self, src):
+#         encoder_out = self.encoder(src)
+#
+#         return encoder_out
 
 
 class TSTDecoder(nn.Module):
