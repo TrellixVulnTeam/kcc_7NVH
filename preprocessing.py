@@ -3,12 +3,13 @@ import pickle
 
 import sentencepiece as spm
 
+
 tokenized_data = {}
 tokenized_data['train'] = {}
 tokenized_data['test'] = {}
 
 for data_type in ["train", "test"]:
-    files = glob.glob(f"./data/processed/raw/*{data_type}.txt")
+    files = glob.glob(f"/HDD/yehoon/data/processed/raw/*{data_type}.txt")
 
     parameter = '--input={} \
     --pad_id={} --pad_piece={} \
@@ -38,7 +39,7 @@ for data_type in ["train", "test"]:
 
     for train_input_file in files:
         prefix = (("_").join(train_input_file.split("\\")[-1].split("_")[:-1]))
-        model_prefix = f'./data/tokenizer/{data_type}_{prefix}_spm'
+        model_prefix = f'/HDD/yehoon/data/tokenizer/{data_type}_{prefix}_spm'
 
         cmd = parameter.format(train_input_file,
                                pad_id, pad_piece,
@@ -67,7 +68,7 @@ for data_type in ["train", "test"]:
             print(f"Make Compelte: {data_type} {prefix} tokenized data")
 
 # Save Data
-processed_path = "./data/processed/tokenized/spm_tokenized_data.pkl"
+processed_path = "/HDD/yehoon/data/processed/tokenized/spm_tokenized_data.pkl"
 with open(processed_path, 'wb') as file:
     pickle.dump(tokenized_data, file)
 print("Saving Tokenized Data is Done!")
