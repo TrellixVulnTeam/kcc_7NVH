@@ -127,7 +127,7 @@ def train():
     print(f'Initializing Device: {device}')
 
     # Data Setting
-    with open("./data/processed/tokenized/spm_tokenized_data.pkl", "rb") as f:
+    with open("/HDD/yehoon/data/processed/tokenized/spm_tokenized_data.pkl", "rb") as f:
         data = pickle.load(f)
 
     em_informal_train = data["train"]["em_informal"]
