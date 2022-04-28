@@ -30,8 +30,8 @@ class StyleTransfer(nn.Module):
     def forward(self, tst_src, tst_trg, teacher_forcing_ratio=0.5):
         tst_src = tst_src.transpose(0, 1)
         tst_trg = tst_trg.transpose(0, 1)
-        embedded = self.src_embedding(tst_src)
-        encoder_out, hidden, cell = self.encoder(embedded)
+        # embedded = self.src_embedding(tst_src)
+        encoder_out, hidden, cell = self.encoder(tst_src)
 
         style_index = int(len(hidden) * (1 - self.style_ratio))
         context_c, context_a = hidden[:style_index], hidden[style_index:]

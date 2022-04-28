@@ -1,5 +1,6 @@
 import os
 import tqdm
+import pickle
 
 import pandas as pd
 import numpy as np
@@ -13,7 +14,7 @@ from torch.utils.data import Dataset, DataLoader
 
 from .model import Encoder, TSTDecoder, NMTDecoder, StyleTransfer, StylizedNMT
 from .loss import bce_loss, kl_loss, ce_loss
-from .custom_dataset import custom_dataset
+from .custom_dataset import CustomDataset
 
 def tst_train_one_epoch(tst_model, epoch, data_loader, tst_optimizer, device):
     tst_model.train()
@@ -22,14 +23,14 @@ def tst_train_one_epoch(tst_model, epoch, data_loader, tst_optimizer, device):
     total = len(data_loader)
 
     with tqdm.tqdm(total=total) as pbar:
-        for _, (X, y) in enumerate(data_loader):
-            X = X.to(device)
-            y = y.to(device)
+        for _, (src, trg) in enumerate(data_loader):
+            src = src.to(device)
+            trg = trg.to(device)
 
-            tst_out, total_latent, content_c, content_mu, content_logv, style_a, style_mu, style_logv = tst_model(X)
+            tst_out, total_latent, content_c, content_mu, content_logv, style_a, style_mu, style_logv = tst_model(src)
 
             # TODO Loss 재정의
-            bce_loss = bce_loss(tst_out, y)
+            bce_loss = bce_loss(tst_out, trg)
             kl_loss, kl_weight = kl_loss(style_mu, style_logv, epoch, 0.0025, 2500)
             loss = (bce_loss + kl_loss*kl_weight)
             loss_value = loss.item()
@@ -54,13 +55,13 @@ def nmt_train_one_epoch(nmt_model, data_loader, nmt_optimizer, device):
     total = len(data_loader)
 
     with tqdm.tqdm(total=total) as pbar:
-        for _, (X, y) in enumerate(data_loader):
-            X = X.to(device)
-            y = y.to(device)
+        for _, (src, trg) in enumerate(data_loader):
+            src = src.to(device)
+            trg = trg.to(device)
 
-            nmt_out = nmt_model(X)
+            nmt_out = nmt_model(src)
 
-            ce_loss = ce_loss(nmt_out, y)
+            ce_loss = ce_loss(nmt_out, trg)
             loss = ce_loss
             loss_value = loss.item()
             train_loss += loss_value
@@ -80,13 +81,13 @@ def tst_evaluate(tst_model, epoch, data_loader, device):
     total = len(data_loader)
 
     with tqdm.tqdm(total=total) as pbar:
-        for _, (X, y) in enumerate(data_loader):
-            X = X.float().to(device)
-            y = y.float().to(device)
+        for _, (src, trg) in enumerate(data_loader):
+            src = src.float().to(device)
+            trg = trg.float().to(device)
 
-            tst_out, total_latent, content_c, content_mu, content_logv, style_a, style_mu, style_logv = tst_model(X)
+            tst_out, total_latent, content_c, content_mu, content_logv, style_a, style_mu, style_logv = tst_model(src)
 
-            bce_loss = bce_loss(tst_out, y)
+            bce_loss = bce_loss(tst_out, trg)
             kl_loss, kl_weight = kl_loss(style_mu, style_logv, epoch, 0.0025, 2500)
 
             loss = (bce_loss + kl_loss * kl_weight)
@@ -105,13 +106,13 @@ def nmt_evaluate(nmt_model, data_loader, device):
     total = len(data_loader)
 
     with tqdm.tqdm(total=total) as pbar:
-        for _, (X, y) in enumerate(data_loader):
-            X = X.float().to(device)
-            y = y.float().to(device)
+        for _, (src, trg) in enumerate(data_loader):
+            src = src.to(device)
+            trg = trg.to(device)
 
-            nmt_out = nmt_model(X)
+            nmt_out = nmt_model(src)
 
-            ce_loss = ce_loss(nmt_out, y)
+            ce_loss = ce_loss(nmt_out, trg)
             loss = ce_loss
             loss_value = loss.item()
             valid_loss += loss_value
@@ -126,9 +127,37 @@ def train():
     print(f'Initializing Device: {device}')
 
     # Data Setting
+    with open("./data/processed/tokenized/spm_tokenized_data.pkl", "rb") as f:
+        data = pickle.load(f)
+
+    em_informal_train = data["train"]["em_informal"]
+    em_formal_train = data["train"]["em_formal"]
+    # fr_informal_train = data["train"]["fr_informal"]
+    # fr_formal_train = data["train"]["fr_formal"]
+
+    em_informal_test = data["test"]["em_informal"]
+    em_formal_test = data["test"]["em_formal"]
+    # fr_informal_test = data["test"]["fr_informal"]
+    # fr_formal_test = data["test"]["fr_formal"]
 
 
+    split_ratio = 0.8
+    em_informal_train = em_informal_train[:int(len(em_informal_train)*split_ratio)]
+    em_informal_valid = em_informal_train[int(len(em_informal_train)*split_ratio):]
+    em_formal_train = em_formal_train[:int(len(em_formal_train) * split_ratio)]
+    em_formal_valid = em_formal_train[int(len(em_formal_train) * split_ratio):]
 
+    min_len, max_len = 2, 300
+    batch_size = 16
+    num_workers = 8
+
+    train_data = CustomDataset(em_informal_train, em_formal_train, min_len, max_len)
+    valid_data = CustomDataset(em_informal_valid, em_formal_valid, min_len, max_len)
+    test_data = CustomDataset(em_informal_test, em_formal_test, min_len, max_len)
+
+    train_loader = DataLoader(train_data, batch_size=batch_size, drop_last=True, shuffle=True, num_workers=num_workers)
+    valid_loader = DataLoader(valid_data, batch_size=batch_size, drop_last=True, shuffle=True, num_workers=num_workers)
+    test_loader = DataLoader(test_data, batch_size=batch_size, drop_last=True, shuffle=True, num_workers=num_workers)
 
 
     # TST Train
@@ -142,10 +171,10 @@ def train():
     print("Start TST Training..")
     for epoch in range(start_epoch, epochs+1):
         print(f"Epoch: {epoch}")
-        epoch_loss, total_latent = tst_train_one_epoch(tst_model, epoch, data_loader, tst_optimizer, device)
+        epoch_loss, total_latent = tst_train_one_epoch(tst_model, epoch, train_loader, tst_optimizer, device)
         print(f"Training Loss: {epoch_loss:.5f}")
 
-        valid_loss = tst_evaluate(tst_model, epoch, data_loader, device)
+        valid_loss = tst_evaluate(tst_model, epoch, valid_loader, device)
         print(f"Validation Loss: {valid_loss:.5f}")
 
     # NMT Train
@@ -158,9 +187,9 @@ def train():
     print("Start NMT Training..")
     for epoch in range(start_epoch, epochs + 1):
         print(f"Epoch: {epoch}")
-        epoch_loss = nmt_train_one_epoch(nmt_model, data_loader, nmt_optimizer, device)
+        epoch_loss = nmt_train_one_epoch(nmt_model, train_loader, nmt_optimizer, device)
         print(f"Training Loss: {epoch_loss:.5f}")
 
-        valid_loss = nmt_evaluate(nmt_model, data_loader, device)
+        valid_loss = nmt_evaluate(nmt_model, valid_loader, device)
         print(f"Validation Loss: {valid_loss:.5f}")
 
