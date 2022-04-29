@@ -68,7 +68,12 @@ def nmt_train_one_epoch(nmt_model, data_loader, nmt_optimizer, device):
 
             nmt_out = nmt_model(src, trg)
 
-            CE_loss = ce_loss(nmt_out, trg)
+            nmt_out = nmt_out.transpose(0, 1)
+            nmt_out = nmt_out[:, 1:].reshape(-1, nmt_out.size(-1))
+
+            trg_trg = trg[:, 1:].reshape(-1)
+
+            CE_loss = ce_loss(nmt_out, trg_trg)
             loss = CE_loss
             loss_value = loss.item()
             train_loss += loss_value
@@ -100,6 +105,7 @@ def tst_evaluate(tst_model, epoch, data_loader, device):
 
             tst_out = tst_out.transpose(0, 1)
             tst_out = tst_out[:, 1:].reshape(-1, tst_out.size(-1))
+
             trg_trg = trg[:, 1:].reshape(-1)
 
             CE_loss = ce_loss(tst_out, trg_trg)
@@ -126,7 +132,12 @@ def nmt_evaluate(nmt_model, data_loader, device):
 
             nmt_out = nmt_model(src, trg)
 
-            CE_loss = ce_loss(nmt_out, trg)
+            nmt_out = nmt_out.transpose(0, 1)
+            nmt_out = nmt_out[:, 1:].reshape(-1, nmt_out.size(-1))
+
+            trg_trg = trg[:, 1:].reshape(-1)
+
+            CE_loss = ce_loss(nmt_out, trg_trg)
             loss = CE_loss
             loss_value = loss.item()
             valid_loss += loss_value
@@ -145,42 +156,66 @@ def train():
         data = pickle.load(f)
         f.close()
 
-    em_informal_train = data["train"]["em_informal"]
-    em_formal_train = data["train"]["em_formal"]
-    # fr_informal_train = data["train"]["fr_informal"]
-    # fr_formal_train = data["train"]["fr_formal"]
-
-    em_informal_test = data["test"]["em_informal"]
-    em_formal_test = data["test"]["em_formal"]
-    # fr_informal_test = data["test"]["fr_informal"]
-    # fr_formal_test = data["test"]["fr_formal"]
-
+    em_informal_train = data["gyafc"]["train"]["em_informal"]
+    em_formal_train = data["gyafc"]["train"]["em_formal"]
+    pair_kor_train = data['korpora']['train']['pair_kor']
+    pair_eng_train = data['korpora']['train']['pair_eng']
+    # fr_informal_train = data["gyafc"]["train"]["fr_informal"]
+    # fr_formal_train = data["gyafc"]["train"]["fr_formal"]
 
     split_ratio = 0.8
-    em_informal_train = em_informal_train[:int(len(em_informal_train)*split_ratio)]
-    em_informal_valid = em_informal_train[int(len(em_informal_train)*split_ratio):]
+    em_informal_train = em_informal_train[:int(len(em_informal_train) * split_ratio)]
+    em_informal_valid = em_informal_train[int(len(em_informal_train) * split_ratio):]
     em_formal_train = em_formal_train[:int(len(em_formal_train) * split_ratio)]
     em_formal_valid = em_formal_train[int(len(em_formal_train) * split_ratio):]
+    pair_kor_train = pair_kor_train[:int(len(pair_kor_train) * split_ratio)]
+    pair_kor_valid = pair_kor_train[int(len(pair_kor_train) * split_ratio):]
+    pair_eng_train = pair_eng_train[:int(len(pair_eng_train) * split_ratio)]
+    pair_eng_valid = pair_eng_train[int(len(pair_eng_train) * split_ratio):]
+
+
+    em_informal_test = data["gyafc"]["test"]["em_informal"]
+    em_formal_test = data["gyafc"]["test"]["em_formal"]
+    pair_kor_test = data['korpora']['test']['pair_kor']
+    pair_eng_test = data['korpora']['test']['pair_eng']
+    # fr_informal_test = data["gyafc"]["test"]["fr_informal"]
+    # fr_formal_test = data["gyafc"]["test"]["fr_formal"]
 
 
     # TODO argparse
     min_len, max_len = 2, 300
-    batch_size = 128
+    batch_size = 200
     num_workers = 0
-    vocab_size = 1800
+    tst_vocab_size = 1800
+    nmt_vocab_size = 2400
 
-    train_data = CustomDataset(em_informal_train, em_formal_train, min_len, max_len)
-    valid_data = CustomDataset(em_informal_valid, em_formal_valid, min_len, max_len)
-    test_data = CustomDataset(em_informal_test, em_formal_test, min_len, max_len)
+    tst_train_data = CustomDataset(em_informal_train, em_formal_train, min_len, max_len)
+    tst_valid_data = CustomDataset(em_informal_valid, em_formal_valid, min_len, max_len)
+    tst_test_data = CustomDataset(em_informal_test, em_formal_test, min_len, max_len)
 
-    train_loader = DataLoader(train_data, batch_size=batch_size, drop_last=True, shuffle=True, num_workers=num_workers)
-    valid_loader = DataLoader(valid_data, batch_size=batch_size, drop_last=True, shuffle=True, num_workers=num_workers)
-    test_loader = DataLoader(test_data, batch_size=batch_size, drop_last=True, shuffle=True, num_workers=num_workers)
+    nmt_train_data = CustomDataset(pair_kor_train, pair_eng_train, min_len, max_len)
+    nmt_valid_data = CustomDataset(pair_kor_valid, pair_eng_valid, min_len, max_len)
+    nmt_test_data = CustomDataset(pair_kor_test, pair_eng_test, min_len, max_len)
+
+
+    tst_train_loader = DataLoader(tst_train_data, batch_size=batch_size, drop_last=True, shuffle=True,
+                                  num_workers=num_workers)
+    tst_valid_loader = DataLoader(tst_valid_data, batch_size=batch_size, drop_last=True, shuffle=True,
+                                  num_workers=num_workers)
+    tst_test_loader = DataLoader(tst_test_data, batch_size=batch_size, drop_last=True, shuffle=True,
+                                 num_workers=num_workers)
+
+    nmt_train_loader = DataLoader(nmt_train_data, batch_size=batch_size, drop_last=True, shuffle=True,
+                                  num_workers=num_workers)
+    nmt_valid_loader = DataLoader(nmt_valid_data, batch_size=batch_size, drop_last=True, shuffle=True,
+                                  num_workers=num_workers)
+    nmt_test_loader = DataLoader(nmt_test_data, batch_size=batch_size, drop_last=True, shuffle=True,
+                                 num_workers=num_workers)
 
 
     # TST Train
-    encoder = Encoder(input_size=vocab_size, d_hidden=1024, d_embed=256, n_layers=2, dropout=0.1, device=device)
-    tst_decoder = TSTDecoder(output_size=vocab_size, d_hidden=1024, d_embed=256, n_layers=2, dropout=0.1, device=device)
+    encoder = Encoder(input_size=tst_vocab_size, d_hidden=1024, d_embed=256, n_layers=2, dropout=0.1, device=device)
+    tst_decoder = TSTDecoder(output_size=tst_vocab_size, d_hidden=1024, d_embed=256, n_layers=2, dropout=0.1, device=device)
     tst_model = StyleTransfer(encoder, tst_decoder, d_hidden=1024, style_ratio=0.3, device=device)
     tst_model = tst_model.to(device)
 
@@ -191,14 +226,14 @@ def train():
     print("Start TST Training..")
     for epoch in range(start_epoch, epochs+1):
         print(f"Epoch: {epoch}")
-        epoch_loss, total_latent = tst_train_one_epoch(tst_model, epoch, train_loader, tst_optimizer, device)
+        epoch_loss, total_latent = tst_train_one_epoch(tst_model, epoch, tst_train_loader, tst_optimizer, device)
         print(f"Training Loss: {epoch_loss:.5f}")
 
-        valid_loss = tst_evaluate(tst_model, epoch, valid_loader, device)
+        valid_loss = tst_evaluate(tst_model, epoch, tst_valid_loader, device)
         print(f"Validation Loss: {valid_loss:.5f}")
 
     # NMT Train
-    nmt_decoder = NMTDecoder(output_size=vocab_size, d_hidden=1024, d_embed=256, n_layers=2, dropout=0.1, device=device)
+    nmt_decoder = NMTDecoder(output_size=nmt_vocab_size, d_hidden=1024, d_embed=256, n_layers=2, dropout=0.1, device=device)
     nmt_model = StylizedNMT(encoder, nmt_decoder, total_latent=total_latent, device=device)
     nmt_model = nmt_model.to(device)
 
@@ -209,9 +244,9 @@ def train():
     print("Start NMT Training..")
     for epoch in range(start_epoch, epochs + 1):
         print(f"Epoch: {epoch}")
-        epoch_loss = nmt_train_one_epoch(nmt_model, train_loader, nmt_optimizer, device)
+        epoch_loss = nmt_train_one_epoch(nmt_model, nmt_train_loader, nmt_optimizer, device)
         print(f"Training Loss: {epoch_loss:.5f}")
 
-        valid_loss = nmt_evaluate(nmt_model, valid_loader, device)
+        valid_loss = nmt_evaluate(nmt_model, nmt_valid_loader, device)
         print(f"Validation Loss: {valid_loss:.5f}")
 
