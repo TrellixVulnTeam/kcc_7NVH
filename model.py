@@ -46,35 +46,26 @@ class StyleTransfer(nn.Module):
     def forward(self, tst_src, tst_trg, teacher_forcing_ratio=0.5):
         tst_src = tst_src.transpose(0, 1)
         tst_trg = tst_trg.transpose(0, 1)
-        # embedded = self.src_embedding(tst_src)
+
         tst_src = tst_src.to(self.device)
         tst_trg = tst_trg.to(self.device)
-        # print("TST model Start")
-        # print("tst_src:", tst_src.size())
-        # print("tst_trg:", tst_trg.size())
+        # size tst_src & trg ; [max_len, batch]
+
         encoder_out, hidden, cell = self.encoder(tst_src)
-        # hidden size = [bidirection*num_layers, batch_size, hidden_size]
-
-        # print("encoder_out:", encoder_out.size())
-        # print("hidden:", hidden.size())
-        # print("cell:", cell.size())
-        # print("TST encode Done")
-
+        # hidden size = [n_layers*bi, batch, d_hidden]
 
         # print("style_ratio, style_index, content_index:", self.style_ratio, self.style_index, self.content_index)
         context_c, context_a = hidden[:, :, :self.content_index], hidden[:, :, -self.style_index:]
-        # print("context_c:", context_c.size())
-        # print("context_a:", context_a.size())
+        # context_c&a size ; [n_layer*bi , batch, d_hidden]
 
         # TODO 따로 따로 reparameterize? 아니면 reparameterize 한 다음에 split?
         # TODO 나눈 후 size 맞추기 위해 content 밑에/style 위에 0으로 채워서 reparameterize?
         content_c, content_mu, content_logv = self.reparameterization(context_c, "content")
         style_a, style_mu, style_logv = self.reparameterization(context_a, "style")
+        # content_c & style_a size ; [n_layer*bi , batch, d_hidden]
 
-        # print("content_c:", content_c.size())
-        # print("style_a:", style_a.size())
         total_latent = torch.cat((content_c, style_a), 0)
-        # print("total_latent:", total_latent.size())
+        # size ; [n_layer*bi , batch, d_hidden]
 
         # TODO cat? add? -> 일단은 total_latent로 진행
         # hidden = torch.add(hidden, total_latent)
@@ -84,12 +75,14 @@ class StyleTransfer(nn.Module):
         batch_size = tst_trg.shape[1]  # batch size
         trg_vocab_size = self.tst_decoder.output_size
         outputs = torch.zeros(trg_len, batch_size, trg_vocab_size).to(self.device)
-        # print("TST outputs size:", outputs.size())
+        # size ; [max_len, batch, vocab_size]
 
         input = tst_trg[0, :]
+        # size ; [16]
 
         for i in range(1, trg_len):
             output, hidden, cell = self.tst_decoder(input, hidden, cell)
+            # size ; output [batch, vocab_size] / hidden [n_layer*bi, batch, hidden] / cell [n_layer*bi, batch, hidden]
             outputs[i] = output
             top1 = output.argmax(1)
 
@@ -151,9 +144,7 @@ class Encoder(nn.Module):
         self.device = device
 
     def forward(self, src):
-        # embedded = self.dropout(self.src_embedding(src))
         embedded = self.dropout(self.src_embedding(src))
-        # print("Encoder embedded:", embedded.size())
         outputs, (hidden, cell) = self.encoder(embedded)
 
         return outputs, hidden, cell
@@ -173,22 +164,18 @@ class TSTDecoder(nn.Module):
         self.device = device
 
     def forward(self, input, hidden, cell):
-        # print("tst Decocder input:", input.size())
         input = input.unsqueeze(0)
-        # print("After tst Decocder input:", input.size())
+        # input size ; [batch] -> [1, batch]
         embedded = self.dropout(self.trg_embedding(input))
-        # print("tst Decocder embedded:", embedded.size())
+        # embedded size ; [1, batch, d_embed]
 
         outputs, (hidden, cell) = self.tst_decoder(embedded, (hidden, cell))
-        # print("decoder outputs:", outputs.size())
-        # print("hidden:", hidden.size())
-        # print("cell:", cell.size())
+        # size; output [1, batch, 2*d_hidden], hidden [n_layer*bi, batch, hidden], cell [n_layer*bi, batch, hidden]
 
 
-        tst_out = self.fc(outputs[-1, :, :])
-        # print("TST fc Done")
-        # print("TST decode Done")
-        # print("\n")
+        tst_out = self.fc(outputs.squeeze(0))
+        # tst_out = self.fc(outputs)
+        # size ; squeeze x [1, batch, vocab_size] / squeeze [batch, vocab_size]
 
         return tst_out, hidden, cell
 

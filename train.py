@@ -20,8 +20,7 @@ def tst_train_one_epoch(tst_model, epoch, data_loader, tst_optimizer, device):
         for _, (src, trg) in enumerate(data_loader):
             src = src.to(device)
             trg = trg.to(device)
-            # print("src:", src.size(), src)
-            print("trg:", trg.size(), trg)
+            # size ; [16, 300]=[batch, max_len]
 
             tst_out, total_latent, content_c, content_mu, content_logv, style_a, style_mu, style_logv = tst_model(src, trg)
 
@@ -31,9 +30,14 @@ def tst_train_one_epoch(tst_model, epoch, data_loader, tst_optimizer, device):
             # loss = (BCE_loss + KL_loss*KL_weight)
 
             tst_out = tst_out.transpose(0, 1)
-            tst_out = tst_out.view(-1, tst_out.size(0))
-            print(tst_out.size(), tst_out)
-            CE_loss = ce_loss(tst_out, trg)
+            # size ; [max_len, batch, vocab_size] -> [batch, max_len, vocab_size]
+            tst_out = tst_out[:, 1:].reshape(-1, tst_out.size(-1))
+            # size ; [(max_len-1)*batch,vocab]
+
+            trg_trg = trg[:, 1:].reshape(-1)
+            # size ; [(max_len-1)*batch]
+
+            CE_loss = ce_loss(tst_out, trg_trg)
             KL_loss, KL_weight = kl_loss(style_mu, style_logv, epoch, 0.0025, 2500)
             loss = (CE_loss + KL_loss * KL_weight)
             loss_value = loss.item()
@@ -93,7 +97,12 @@ def tst_evaluate(tst_model, epoch, data_loader, device):
             # BCE_loss = ce_loss(tst_out, trg)
             # KL_loss, KL_weight = kl_loss(style_mu, style_logv, epoch, 0.0025, 2500)
             # loss = (BCE_loss + KL_loss * KL_weight)
-            CE_loss = ce_loss(tst_out, trg)
+
+            tst_out = tst_out.transpose(0, 1)
+            tst_out = tst_out[:, 1:].reshape(-1, tst_out.size(-1))
+            trg_trg = trg[:, 1:].reshape(-1)
+
+            CE_loss = ce_loss(tst_out, trg_trg)
             KL_loss, KL_weight = kl_loss(style_mu, style_logv, epoch, 0.0025, 2500)
             loss = (CE_loss + KL_loss * KL_weight)
             loss_value = loss.item()
@@ -128,7 +137,7 @@ def nmt_evaluate(nmt_model, data_loader, device):
 
 def train():
     # Device Setting
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
     print(f'Initializing Device: {device}')
 
     # Data Setting
@@ -156,7 +165,7 @@ def train():
 
     # TODO argparse
     min_len, max_len = 2, 300
-    batch_size = 16
+    batch_size = 128
     num_workers = 0
     vocab_size = 1800
 
