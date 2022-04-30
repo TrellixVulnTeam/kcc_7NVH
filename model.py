@@ -118,6 +118,8 @@ class StylizedNMT(nn.Module):
         trg_len = nmt_trg.shape[0]  # length of word
         batch_size = nmt_trg.shape[1]  # batch size
         trg_vocab_size = self.nmt_decoder.output_size
+
+        print(trg_vocab_size)
         outputs = torch.zeros(trg_len, batch_size, trg_vocab_size).to(self.device)
 
         input = nmt_trg[0, :]

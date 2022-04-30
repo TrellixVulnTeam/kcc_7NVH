@@ -222,7 +222,7 @@ def train():
     tst_optimizer = torch.optim.AdamW(tst_model.parameters(), lr=0.001)
 
     start_epoch = 0
-    epochs = 100
+    epochs = 1
     print("Start TST Training..")
     for epoch in range(start_epoch, epochs+1):
         print(f"Epoch: {epoch}")
@@ -233,7 +233,7 @@ def train():
         print(f"Validation Loss: {valid_loss:.5f}")
 
     # NMT Train
-    nmt_decoder = NMTDecoder(output_size=nmt_vocab_size, d_hidden=1024, d_embed=256, n_layers=2, dropout=0.1, device=device)
+    nmt_decoder = NMTDecoder(output_size=tst_vocab_size, d_hidden=1024, d_embed=256, n_layers=2, dropout=0.1, device=device)
     nmt_model = StylizedNMT(encoder, nmt_decoder, total_latent=total_latent, device=device)
     nmt_model = nmt_model.to(device)
 
