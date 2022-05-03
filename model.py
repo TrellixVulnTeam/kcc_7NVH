@@ -1,4 +1,5 @@
 import random
+import numpy as np
 
 import torch
 from torch import nn
@@ -80,21 +81,24 @@ class StyleTransfer(nn.Module):
         input = tst_trg[0, :]
         # size ; [16]
 
+        output_list = []
         for i in range(1, trg_len):
             output, hidden, cell = self.tst_decoder(input, hidden, cell)
             # size ; output [batch, vocab_size] / hidden [n_layer*bi, batch, hidden] / cell [n_layer*bi, batch, hidden]
             outputs[i] = output
+            output_list.append(torch.argmax(output, dim=1).tolist())
+            # outputs[i] = torch.argmax(output, dim=1)
+            # print("outputs", outputs.size())
             top1 = output.argmax(1)
 
             teacher_force = random.random() < teacher_forcing_ratio
             input = tst_trg[i] if teacher_force else top1
 
-
-        return outputs, total_latent, content_c, content_mu, content_logv, style_a, style_mu, style_logv
+        return outputs, total_latent, content_c, content_mu, content_logv, style_a, style_mu, style_logv, output_list
 
 
 class StylizedNMT(nn.Module):
-    def __init__(self, encoder, nmt_decoder, total_latent, device):
+    def __init__(self, encoder, nmt_decoder, d_hidden, total_latent, device):
         super(StylizedNMT, self).__init__()
 
         self.device = device
@@ -103,36 +107,46 @@ class StylizedNMT(nn.Module):
         self.nmt_decoder = nmt_decoder
         self.total_latent = total_latent
 
+        self.hidden2concat = nn.Linear(d_hidden, d_hidden//2)
+        self.latent2concat = nn.Linear(d_hidden, d_hidden//2)
+
     def forward(self, nmt_src, nmt_trg, teacher_forcing_ratio=0.5):
         nmt_src = nmt_src.transpose(0, 1)
         nmt_trg = nmt_trg.transpose(0, 1)
 
         nmt_src = nmt_src.to(self.device)
         nmt_trg = nmt_trg.to(self.device)
-        # embedded = self.src_embedding(nmt_src)
+
         encoder_out, hidden, cell = self.encoder(nmt_src)
         
         # TODO add 할 지, concat 할 지
-        hidden = torch.add(hidden, self.total_latent)
+        # print(f"111 hidden: {hidden.size()}, latent: {self.total_latent.size()}")
+        hidden = self.hidden2concat(hidden)
+        latent = self.latent2concat(self.total_latent)
+        # size ; hidden [n_layer*bi, batch, hidden/2] / latent [n_layer*bi, batch, hidden/2]
+        hidden = torch.cat((hidden, latent), 2)
+        # size ; [n_layer*bi, batch, hidden]
 
         trg_len = nmt_trg.shape[0]  # length of word
         batch_size = nmt_trg.shape[1]  # batch size
         trg_vocab_size = self.nmt_decoder.output_size
 
-        print(trg_vocab_size)
         outputs = torch.zeros(trg_len, batch_size, trg_vocab_size).to(self.device)
+        # size ; [max_len, batch, vocab_size]
 
         input = nmt_trg[0, :]
-
+        output_list = []
         for i in range(1, trg_len):
             output, hidden, cell = self.nmt_decoder(input, hidden, cell)
             outputs[i] = output
+            output_list.append(torch.argmax(output, dim=1).tolist())
+            # outputs[i] = output
             top1 = output.argmax(1)
 
             teacher_force = random.random() < teacher_forcing_ratio
             input = nmt_trg[i] if teacher_force else top1
 
-        return outputs
+        return outputs, output_list
 
 
 class Encoder(nn.Module):
@@ -201,9 +215,12 @@ class NMTDecoder(nn.Module):
 
     def forward(self, input, hidden, cell):
         input = input.unsqueeze(0)
+        # size ; [1, batch]
         embedded = self.dropout(self.trg_embedding(input))
-
+        # size ; [1, batch, d_embed]
         outputs, (hidden, cell) = self.nmt_decoder(embedded, (hidden, cell))
-        nmt_out = self.fc(outputs.squezze(0))
+        # hidden size ; [n_layer*bi, batch, hidden]
+        nmt_out = self.fc(outputs.squeeze(0))
+        #size ; [batch, vocab_size]
 
         return nmt_out, hidden, cell
