@@ -12,7 +12,8 @@ from model import Encoder, TSTDecoder, NMTDecoder, StyleTransfer, StylizedNMT
 from loss import bce_loss, ce_loss, kl_loss
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-# os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+
+torch.autograd.set_detect_anomaly(True)
 
 def tst_train_one_epoch(tst_model, epoch, data_loader, tst_optimizer, device):
     tst_model.train()
@@ -43,12 +44,12 @@ def tst_train_one_epoch(tst_model, epoch, data_loader, tst_optimizer, device):
 
             CE_loss = ce_loss(tst_out, trg_trg)
             KL_loss, KL_weight = kl_loss(style_mu, style_logv, epoch, 0.0025, 2500)
-            loss = (CE_loss + KL_loss * KL_weight)
-            loss_value = loss.item()
+            tst_loss = (CE_loss + KL_loss * KL_weight)
+            loss_value = tst_loss.item()
             train_loss += loss_value
 
             tst_optimizer.zero_grad()   # optimizer 초기화
-            loss.backward()
+            tst_loss.backward(retain_graph=True)
             tst_optimizer.step()    # Gradient Descent 시작
             pbar.update(1)
 
@@ -70,7 +71,7 @@ def nmt_train_one_epoch(nmt_model, data_loader, nmt_optimizer, device):
             src = src.to(device)
             trg = trg.to(device)
 
-            nmt_out = nmt_model(src, trg)
+            nmt_out, output_list = nmt_model(src, trg)
 
             nmt_out = nmt_out.transpose(0, 1)
             nmt_out = nmt_out[:, 1:].reshape(-1, nmt_out.size(-1))
@@ -78,16 +79,16 @@ def nmt_train_one_epoch(nmt_model, data_loader, nmt_optimizer, device):
             trg_trg = trg[:, 1:].reshape(-1)
 
             CE_loss = ce_loss(nmt_out, trg_trg)
-            loss = CE_loss
-            loss_value = loss.item()
+            nmt_loss = CE_loss
+            loss_value = nmt_loss.item()
             train_loss += loss_value
 
             nmt_optimizer.zero_grad()   # optimizer 초기화
-            loss.backward(retain_graph=True)
+            nmt_loss.backward()
             nmt_optimizer.step()    # Gradient Descent 시작
             pbar.update(1)
 
-    return train_loss/total, trg_trg, nmt_out
+    return train_loss/total, trg[:, 1:].tolist(), output_list
 
 @torch.no_grad()    #no autograd (backpropagation X)
 def tst_evaluate(tst_model, epoch, data_loader, device):
@@ -114,8 +115,8 @@ def tst_evaluate(tst_model, epoch, data_loader, device):
 
             CE_loss = ce_loss(tst_out, trg_trg)
             KL_loss, KL_weight = kl_loss(style_mu, style_logv, epoch, 0.0025, 2500)
-            loss = (CE_loss + KL_loss * KL_weight)
-            loss_value = loss.item()
+            tst_loss = (CE_loss + KL_loss * KL_weight)
+            loss_value = tst_loss.item()
             valid_loss += loss_value
 
             pbar.update(1)
@@ -136,7 +137,7 @@ def nmt_evaluate(nmt_model, data_loader, device):
             src = src.to(device)
             trg = trg.to(device)
 
-            nmt_out = nmt_model(src, trg)
+            nmt_out, output_list = nmt_model(src, trg)
 
             nmt_out = nmt_out.transpose(0, 1)
             nmt_out = nmt_out[:, 1:].reshape(-1, nmt_out.size(-1))
@@ -145,14 +146,14 @@ def nmt_evaluate(nmt_model, data_loader, device):
 
 
             CE_loss = ce_loss(nmt_out, trg_trg)
-            loss = CE_loss
-            loss_value = loss.item()
+            nmt_loss = CE_loss
+            loss_value = nmt_loss.item()
             valid_loss += loss_value
 
 
             pbar.update(1)
 
-    return valid_loss/total, trg_trg, nmt_out
+    return valid_loss/total, trg[:, 1:].tolist(), output_list
 
 def train():
     # Device Setting
@@ -192,7 +193,7 @@ def train():
 
     # TODO argparse
     min_len, max_len = 2, 300
-    batch_size = 250
+    batch_size = 128
     num_workers = 0
     tst_vocab_size = 1800
     nmt_vocab_size = 2400

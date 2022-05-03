@@ -123,29 +123,30 @@ class StylizedNMT(nn.Module):
         # print(f"111 hidden: {hidden.size()}, latent: {self.total_latent.size()}")
         hidden = self.hidden2concat(hidden)
         latent = self.latent2concat(self.total_latent)
-        # print(f"222 hidden: {hidden.size()}, latent: {latent.size()}")
-        hidden = torch.cat((hidden, latent), -1)
-        # print(f"333 hidden: {hidden.size()}")
+        # size ; hidden [n_layer*bi, batch, hidden/2] / latent [n_layer*bi, batch, hidden/2]
+        hidden = torch.cat((hidden, latent), 2)
+        # size ; [n_layer*bi, batch, hidden]
 
         trg_len = nmt_trg.shape[0]  # length of word
         batch_size = nmt_trg.shape[1]  # batch size
         trg_vocab_size = self.nmt_decoder.output_size
 
         outputs = torch.zeros(trg_len, batch_size, trg_vocab_size).to(self.device)
-        # print(f"outputs:", outputs.size())
+        # size ; [max_len, batch, vocab_size]
 
         input = nmt_trg[0, :]
-
+        output_list = []
         for i in range(1, trg_len):
             output, hidden, cell = self.nmt_decoder(input, hidden, cell)
             outputs[i] = output
-            outputs[i] = output
+            output_list.append(torch.argmax(output, dim=1).tolist())
+            # outputs[i] = output
             top1 = output.argmax(1)
 
             teacher_force = random.random() < teacher_forcing_ratio
             input = nmt_trg[i] if teacher_force else top1
 
-        return outputs
+        return outputs, output_list
 
 
 class Encoder(nn.Module):
@@ -214,9 +215,12 @@ class NMTDecoder(nn.Module):
 
     def forward(self, input, hidden, cell):
         input = input.unsqueeze(0)
+        # size ; [1, batch]
         embedded = self.dropout(self.trg_embedding(input))
-
+        # size ; [1, batch, d_embed]
         outputs, (hidden, cell) = self.nmt_decoder(embedded, (hidden, cell))
+        # hidden size ; [n_layer*bi, batch, hidden]
         nmt_out = self.fc(outputs.squeeze(0))
+        #size ; [batch, vocab_size]
 
         return nmt_out, hidden, cell
