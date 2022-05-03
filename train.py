@@ -157,7 +157,7 @@ def nmt_evaluate(nmt_model, data_loader, device):
 
 def train():
     # Device Setting
-    device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:3' if torch.cuda.is_available() else 'cpu')
     print(f'Initializing Device: {device}')
 
     # Data Setting
