@@ -146,6 +146,7 @@ class StylizedNMT(nn.Module):
             teacher_force = random.random() < teacher_forcing_ratio
             input = nmt_trg[i] if teacher_force else top1
 
+
         return outputs, output_list
 
 
@@ -157,8 +158,6 @@ class Encoder(nn.Module):
         # TODO num_layers=2 -> total_latent [8, batch_size, d_hidden] 이거 어떻게 해결?
         self.encoder = nn.LSTM(input_size=d_embed, hidden_size=d_hidden, dropout=dropout,
                                num_layers=n_layers, bidirectional=True)
-        # self.encoder = nn.LSTM(input_size=d_embed, hidden_size=d_hidden, dropout=dropout,
-        #                        num_layers=1, bidirectional=True)
         self.dropout = nn.Dropout(dropout)
 
         self.device = device
