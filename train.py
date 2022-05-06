@@ -3,6 +3,7 @@ import pickle
 import os
 
 import torch
+from torch import nn
 from torch.utils.data import DataLoader
 
 import sentencepiece as spm
@@ -26,7 +27,6 @@ def tst_train_one_epoch(tst_model, epoch, data_loader, tst_optimizer, device):
         for _, (src, trg) in enumerate(data_loader):
             src = src.to(device)
             trg = trg.to(device)
-            # size ; [16, 300]=[batch, max_len]
 
             tst_out, total_latent, content_c, content_mu, content_logv, style_a, style_mu, style_logv, output_list = tst_model(src, trg)
 
@@ -35,15 +35,11 @@ def tst_train_one_epoch(tst_model, epoch, data_loader, tst_optimizer, device):
             # KL_loss, KL_weight = kl_loss(style_mu, style_logv, epoch, 0.0025, 2500)
             # loss = (BCE_loss + KL_loss*KL_weight)
 
-            tst_out = tst_out.transpose(0, 1)
-            # size ; [max_len, batch, vocab_size] -> [batch, max_len, vocab_size]
-            reshape_tst_out = tst_out[:, 1:].clone().reshape(-1, tst_out.size(-1))
-            # size ; [(max_len-1)*batch,vocab]
+            tst_out = tst_out[:, 1:].reshape(-1, tst_out.size(-1))
 
-            trg_trg = trg[:, 1:].clone().reshape(-1)
-            # size ; [(max_len-1)*batch]
+            trg_trg = trg[:, 1:].reshape(-1)
 
-            CE_loss = ce_loss(reshape_tst_out, trg_trg)
+            CE_loss = ce_loss(tst_out, trg_trg)
             KL_loss, KL_weight = kl_loss(style_mu, style_logv, epoch, 0.0025, 2500)
             tst_loss = (CE_loss + KL_loss * KL_weight)
             loss_value = tst_loss.item()
@@ -55,52 +51,6 @@ def tst_train_one_epoch(tst_model, epoch, data_loader, tst_optimizer, device):
             pbar.update(1)
 
     return train_loss/total, total_latent, trg[:, 1:].tolist(), output_list
-
-def nmt_train_one_epoch(nmt_model, data_loader, nmt_optimizer, device):
-    nmt_model.train()
-
-    # # Freeze
-    # for param in nmt_model.encoder.parameters():
-    #     param.requires_grad = False
-
-    train_loss = 0.0
-    total = len(data_loader)
-
-    with tqdm.tqdm(total=total) as pbar:
-        for _, (src, trg) in enumerate(data_loader):
-            src = src.to(device)
-            trg = trg.to(device)
-
-            # # Freeze
-            # for param in nmt_model.encoder.parameters():
-            #     param.requires_grad = False
-
-            nmt_out, output_list = nmt_model(src, trg)
-            # Before = list(nmt_model.parameters())[0].clone()
-
-            nmt_out = nmt_out.transpose(0, 1)
-            reshape_nmt_out = nmt_out[:, 1:].clone().reshape(-1, nmt_out.size(-1))
-            # nmt_out = nmt_out[:, 1:].reshape(-1, nmt_out.size(-1))
-
-            trg_trg = trg[:, 1:].clone().reshape(-1)
-
-            nmt_loss = ce_loss(reshape_nmt_out, trg_trg)
-            # print("nmt_loss:", nmt_loss)
-            # nmt_loss = CE_loss
-            loss_value = nmt_loss.item()
-
-            train_loss = train_loss + loss_value
-
-            nmt_optimizer.zero_grad()   # optimizer 초기화
-            # nmt_loss.requires_grad_(True)
-            nmt_loss.backward()
-            # print("nmt_loss:", nmt_loss)
-            nmt_optimizer.step()    # Gradient Descent 시작
-            # After = list(nmt_model.parameters())[0].clone()
-            # print(torch.equal(Before.data, After.data))
-            pbar.update(1)
-
-    return train_loss/total, trg[:, 1:].tolist(), output_list
 
 @torch.no_grad()    #no autograd (backpropagation X)
 def tst_evaluate(tst_model, epoch, data_loader, device):
@@ -116,16 +66,11 @@ def tst_evaluate(tst_model, epoch, data_loader, device):
 
             tst_out, total_latent, content_c, content_mu, content_logv, style_a, style_mu, style_logv, output_list = tst_model(src, trg)
 
-            # BCE_loss = ce_loss(tst_out, trg)
-            # KL_loss, KL_weight = kl_loss(style_mu, style_logv, epoch, 0.0025, 2500)
-            # loss = (BCE_loss + KL_loss * KL_weight)
+            tst_out = tst_out[:, 1:].reshape(-1, tst_out.size(-1))
 
-            tst_out = tst_out.transpose(0, 1)
-            reshape_tst_out = tst_out[:, 1:].clone().reshape(-1, tst_out.size(-1))
+            trg_trg = trg[:, 1:].reshape(-1)
 
-            trg_trg = trg[:, 1:].clone().reshape(-1)
-
-            CE_loss = ce_loss(reshape_tst_out, trg_trg)
+            CE_loss = ce_loss(tst_out, trg_trg)
             KL_loss, KL_weight = kl_loss(style_mu, style_logv, epoch, 0.0025, 2500)
             tst_loss = (CE_loss + KL_loss * KL_weight)
             loss_value = tst_loss.item()
@@ -135,9 +80,44 @@ def tst_evaluate(tst_model, epoch, data_loader, device):
 
     return valid_loss/total, trg[:, 1:].tolist(), output_list
 
+def nmt_train_one_epoch(tst_encoder, nmt_model, data_loader, nmt_optimizer, device):
+    nmt_model.train()
+
+    train_loss = 0.0
+    total = len(data_loader)
+
+    with tqdm.tqdm(total=total) as pbar:
+        for _, (src, trg) in enumerate(data_loader):
+            src = src.to(device)
+            trg = trg.to(device)
+
+            _, nmt_hidden, nmt_cell = tst_encoder(src)
+
+            nmt_hidden = nmt_hidden.detach().to(device)
+            nmt_cell = nmt_cell.detach().to(device)
+
+            nmt_out, output_list = nmt_model(nmt_hidden, nmt_cell, trg)
+
+            nmt_out = nmt_out[:, 1:].detach().reshape(-1, nmt_out.size(-1))
+
+            trg_trg = trg[:, 1:].detach().reshape(-1)
+
+
+            nmt_loss = ce_loss(nmt_out, trg_trg)
+            loss_value = nmt_loss.item()
+            train_loss = train_loss + loss_value
+
+            nmt_optimizer.zero_grad()  # optimizer 초기화
+            nmt_loss.requires_grad_(True)
+            nmt_loss.backward(retain_graph=True)
+            nmt_optimizer.step()    # Gradient Descent 시작
+
+            pbar.update(1)
+
+    return train_loss/total, trg[:, 1:].tolist(), output_list
+
 @torch.no_grad()    #no autograd (backpropagation X)
-def nmt_evaluate(nmt_model, data_loader, device):
-    output_list = []
+def nmt_evaluate(tst_encoder, nmt_model, data_loader, device):
     nmt_model.eval()
 
     valid_loss = 0.0
@@ -148,19 +128,21 @@ def nmt_evaluate(nmt_model, data_loader, device):
             src = src.to(device)
             trg = trg.to(device)
 
-            nmt_out, output_list = nmt_model(src, trg)
+            _, nmt_hidden, nmt_cell = tst_encoder(src)
 
-            nmt_out = nmt_out.transpose(0, 1)
-            reshape_nmt_out = nmt_out[:, 1:].clone().reshape(-1, nmt_out.size(-1))
+            nmt_hidden = nmt_hidden.detach().to(device)
+            nmt_cell = nmt_cell.detach().to(device)
 
-            trg_trg = trg[:, 1:].clone().reshape(-1)
+            nmt_out, output_list = nmt_model(nmt_hidden, nmt_cell, trg)
 
+            nmt_out = nmt_out[:, 1:].detach().reshape(-1, nmt_out.size(-1))
 
-            CE_loss = ce_loss(reshape_nmt_out, trg_trg)
+            trg_trg = trg[:, 1:].detach().reshape(-1)
+
+            CE_loss = ce_loss(nmt_out, trg_trg)
             nmt_loss = CE_loss
             loss_value = nmt_loss.item()
             valid_loss += loss_value
-
 
             pbar.update(1)
 
@@ -168,8 +150,9 @@ def nmt_evaluate(nmt_model, data_loader, device):
 
 def train():
     # Device Setting
-    device = torch.device('cuda:3' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Initializing Device: {device}')
+    print(f'Count of using GPUs:{torch.cuda.device_count()}')
 
     # Data Setting
     with open("/HDD/yehoon/data/processed/tokenized/spm_tokenized_data.pkl", "rb") as f:
@@ -234,7 +217,7 @@ def train():
 
 
     # TST Train
-    tst_encoder = Encoder(input_size=tst_vocab_size, d_hidden=1024, d_embed=256, n_layers=2, dropout=0.1, device=device)
+    tst_encoder = Encoder(input_size=nmt_vocab_size, d_hidden=1024, d_embed=256, n_layers=2, dropout=0.1, device=device)
     tst_decoder = TSTDecoder(output_size=tst_vocab_size, d_hidden=1024, d_embed=256, n_layers=2, dropout=0.1, device=device)
     tst_model = StyleTransfer(tst_encoder, tst_decoder, d_hidden=1024, style_ratio=0.3, device=device)
     tst_model = tst_model.to(device)
@@ -242,7 +225,7 @@ def train():
     tst_optimizer = torch.optim.AdamW(tst_model.parameters(), lr=0.001)
 
     start_epoch = 0
-    epochs = 0
+    epochs = 10
 
     print("Start TST Training..")
 
@@ -257,14 +240,13 @@ def train():
         epoch_loss, total_latent, tst_train_trg_list, tst_train_out_list = tst_train_one_epoch(tst_model, epoch, tst_train_loader, tst_optimizer, device)
 
         print(f"Training Loss: {epoch_loss:.5f}")
-        # print(f"train target: {[tst_tokenizer.DecodeIds(i) for i in trg_list]}")
-        # print(f"train predict: {[tst_tokenizer.DecodeIds(j) for j in out_list]}")
 
         valid_loss, tst_valid_trg_list, tst_valid_out_list = tst_evaluate(tst_model, epoch, tst_valid_loader, device)
         print(f"Validation Loss: {valid_loss:.5f}")
 
-        # print(f"valid target: {[tst_tokenizer.DecodeIds(i) for i in trg_list]}")
-        # print(f"valid predict: {[tst_tokenizer.DecodeIds(j) for j in out_list]}")
+        tst_train_out_list = list(map(list, zip(*tst_train_out_list)))
+        tst_valid_out_list = list(map(list, zip(*tst_valid_out_list)))
+
         tst_train_target_decode = [tst_tokenizer.DecodeIds(i) for i in tst_train_trg_list]
         tst_train_output_decoder = [tst_tokenizer.DecodeIds(j) for j in tst_train_out_list]
         tst_train_decode_output.append((tst_train_target_decode, tst_train_output_decoder))
@@ -295,15 +277,16 @@ def train():
 
     # NMT Train
 
-    nmt_encoder = Encoder(input_size=nmt_vocab_size, d_hidden=1024, d_embed=256, n_layers=2, dropout=0.1, device=device)
+    nmt_encoder = tst_model.encoder.requires_grad_(False)
+    nmt_encoder = nmt_encoder.to(device)
     nmt_decoder = NMTDecoder(output_size=nmt_vocab_size, d_hidden=1024, d_embed=256, n_layers=2, dropout=0.1, device=device)
-    nmt_model = StylizedNMT(nmt_encoder, nmt_decoder, d_hidden=1024, total_latent=total_latent, device=device)
+    nmt_model = StylizedNMT(nmt_decoder, d_hidden=1024, total_latent=total_latent, device=device)
     nmt_model = nmt_model.to(device)
 
-    nmt_optimizer = torch.optim.AdamW(nmt_model.parameters(), lr=0.001)
+    nmt_optimizer = torch.optim.AdamW(nmt_model.nmt_decoder.parameters(), lr=0.001)
 
     start_epoch = 0
-    epochs = 50
+    epochs = 10
 
     print("Start NMT Training..")
 
@@ -315,12 +298,14 @@ def train():
 
     for epoch in range(start_epoch, epochs + 1):
         print(f"Epoch: {epoch}")
-        epoch_loss , nmt_train_trg_list, nmt_train_out_list= nmt_train_one_epoch(nmt_model, nmt_train_loader, nmt_optimizer, device)
+        epoch_loss , nmt_train_trg_list, nmt_train_out_list= nmt_train_one_epoch(nmt_encoder, nmt_model, nmt_train_loader, nmt_optimizer, device)
         print(f"Training Loss: {epoch_loss:.5f}")
-        # print(f"train target: {nmt_tokenizer.DecodeIds(trg_trg)}, train predict: {nmt_tokenizer.DecodeIds(train_out)}")
 
-        valid_loss, nmt_valid_trg_list, nmt_valid_out_list = nmt_evaluate(nmt_model, nmt_valid_loader, device)
+        valid_loss, nmt_valid_trg_list, nmt_valid_out_list = nmt_evaluate(nmt_encoder, nmt_model, nmt_valid_loader, device)
         print(f"Validation Loss: {valid_loss:.5f}")
+
+        nmt_train_out_list = list(map(list, zip(*nmt_train_out_list)))
+        nmt_valid_out_list = list(map(list, zip(*nmt_valid_out_list)))
 
         nmt_train_target_decode = [nmt_tokenizer.DecodeIds(i) for i in nmt_train_trg_list]
         nmt_train_output_decoder = [nmt_tokenizer.DecodeIds(j) for j in nmt_train_out_list]
