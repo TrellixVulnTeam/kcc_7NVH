@@ -3,7 +3,7 @@ import pickle
 
 import sentencepiece as spm
 
-def preprocessing():
+def preprocessing(args):
     tokenized_data = {}
     for corpus in ["korpora", "gyafc"]:
         tokenized_data[corpus] = {}

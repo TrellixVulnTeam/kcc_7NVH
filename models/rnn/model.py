@@ -5,7 +5,7 @@ import torch
 from torch import nn
 
 class StyleTransfer(nn.Module):
-    def __init__(self, encoder, tst_decoder, d_hidden, style_ratio, device):
+    def __init__(self, encoder, tst_decoder, d_hidden, style_ratio, variational, device):
         super(StyleTransfer, self).__init__()
 
         self.device = device
@@ -17,6 +17,8 @@ class StyleTransfer(nn.Module):
         self.style_ratio = style_ratio
         self.content_index = int(self.d_hidden * (1 - self.style_ratio))
         self.style_index = int(self.d_hidden-self.content_index)
+
+        self.variational = variational
 
 
         # TODO Size ?
@@ -30,6 +32,7 @@ class StyleTransfer(nn.Module):
     def reparameterization(self, hidden, latent_type):
         hidden = hidden.transpose(0, -1)
         hidden = self.half_hidden(hidden)
+
         hidden = hidden.transpose(0, -1)
         if latent_type == "content":
             mean = self.content2mean(hidden).to(self.device)
@@ -45,107 +48,93 @@ class StyleTransfer(nn.Module):
         return z, mean, logv
 
     def forward(self, tst_src, tst_trg, teacher_forcing_ratio=0.5):
-        tst_src = tst_src.transpose(0, 1)
-        tst_trg = tst_trg.transpose(0, 1)
-
         tst_src = tst_src.to(self.device)
         tst_trg = tst_trg.to(self.device)
-        # size tst_src & trg ; [max_len, batch]
 
         encoder_out, hidden, cell = self.encoder(tst_src)
-        # hidden size = [n_layers*bi, batch, d_hidden]
 
-        # print("style_ratio, style_index, content_index:", self.style_ratio, self.style_index, self.content_index)
-        context_c, context_a = hidden[:, :, :self.content_index], hidden[:, :, -self.style_index:]
-        # context_c&a size ; [n_layer*bi , batch, d_hidden]
+        if self.variational:
+            context_c, context_a = hidden[:, :, :self.content_index], hidden[:, :, -self.style_index:]
 
-        # TODO 따로 따로 reparameterize? 아니면 reparameterize 한 다음에 split?
-        # TODO 나눈 후 size 맞추기 위해 content 밑에/style 위에 0으로 채워서 reparameterize?
-        content_c, content_mu, content_logv = self.reparameterization(context_c, "content")
-        style_a, style_mu, style_logv = self.reparameterization(context_a, "style")
-        # content_c & style_a size ; [n_layer*bi , batch, d_hidden]
+            # TODO 따로 따로 reparameterize? 아니면 reparameterize 한 다음에 split?
+            # TODO 나눈 후 size 맞추기 위해 content 밑에/style 위에 0으로 채워서 reparameterize?
+            content_c, content_mu, content_logv = self.reparameterization(context_c, "content")
+            style_a, style_mu, style_logv = self.reparameterization(context_a, "style")
 
-        total_latent = torch.cat((content_c, style_a), 0)
-        # size ; [n_layer*bi , batch, d_hidden]
+            total_latent = torch.cat((content_c, style_a), 0)
 
-        # TODO cat? add? -> 일단은 total_latent로 진행
-        # hidden = torch.add(hidden, total_latent)
-        hidden = total_latent
+            # TODO cat? add? -> 일단은 total_latent로 진행
+            hidden = total_latent
 
-        trg_len = tst_trg.shape[0]  # length of word
-        batch_size = tst_trg.shape[1]  # batch size
+            latent_variables = [total_latent, content_c, content_mu, content_logv, style_a, style_mu, style_logv,]
+
+        else:
+            latent_variables = [None for _ in range(7)]
+
+        trg_len = tst_trg.shape[1]  # length of word
+        batch_size = tst_trg.shape[0]  # batch size
         trg_vocab_size = self.tst_decoder.output_size
-        outputs = torch.zeros(trg_len, batch_size, trg_vocab_size).to(self.device)
-        # size ; [max_len, batch, vocab_size]
+        outputs = torch.zeros(batch_size, trg_len, trg_vocab_size).to(self.device)
 
-        input = tst_trg[0, :]
-        # size ; [16]
+        input = tst_trg[:, 0]  # BOS 먼저
 
         output_list = []
         for i in range(1, trg_len):
             output, hidden, cell = self.tst_decoder(input, hidden, cell)
-            # size ; output [batch, vocab_size] / hidden [n_layer*bi, batch, hidden] / cell [n_layer*bi, batch, hidden]
-            outputs[i] = output
+            outputs[:, i] = output
             output_list.append(torch.argmax(output, dim=1).tolist())
-            # outputs[i] = torch.argmax(output, dim=1)
-            # print("outputs", outputs.size())
             top1 = output.argmax(1)
 
             teacher_force = random.random() < teacher_forcing_ratio
-            input = tst_trg[i] if teacher_force else top1
+            input = tst_trg[:, i] if teacher_force else top1
 
-        return outputs, total_latent, content_c, content_mu, content_logv, style_a, style_mu, style_logv, output_list
-
+        return outputs, latent_variables, output_list
 
 class StylizedNMT(nn.Module):
-    def __init__(self, encoder, nmt_decoder, d_hidden, total_latent, device):
+    def __init__(self, nmt_encoder, nmt_decoder, d_hidden, total_latent, device):
         super(StylizedNMT, self).__init__()
 
         self.device = device
 
-        self.encoder = encoder
+        self.nmt_encoder = nmt_encoder
         self.nmt_decoder = nmt_decoder
         self.total_latent = total_latent
 
-        self.hidden2concat = nn.Linear(d_hidden, d_hidden//2)
-        self.latent2concat = nn.Linear(d_hidden, d_hidden//2)
+        self.hidden2concat = nn.Linear(d_hidden, d_hidden // 2)
+        self.latent2concat = nn.Linear(d_hidden, d_hidden // 2)
 
     def forward(self, nmt_src, nmt_trg, teacher_forcing_ratio=0.5):
-        nmt_src = nmt_src.transpose(0, 1)
-        nmt_trg = nmt_trg.transpose(0, 1)
 
+        # nmt_hidden = nmt_hidden.to(self.device)
+        # nmt_cell = nmt_cell.to(self.device)
         nmt_src = nmt_src.to(self.device)
         nmt_trg = nmt_trg.to(self.device)
 
-        encoder_out, hidden, cell = self.encoder(nmt_src)
-        
-        # TODO add 할 지, concat 할 지
-        # print(f"111 hidden: {hidden.size()}, latent: {self.total_latent.size()}")
-        hidden = self.hidden2concat(hidden)
-        latent = self.latent2concat(self.total_latent)
-        # size ; hidden [n_layer*bi, batch, hidden/2] / latent [n_layer*bi, batch, hidden/2]
-        hidden = torch.cat((hidden, latent), 2)
-        # size ; [n_layer*bi, batch, hidden]
+        encoder_out, hidden, cell = self.nmt_encoder(nmt_src)
 
-        trg_len = nmt_trg.shape[0]  # length of word
-        batch_size = nmt_trg.shape[1]  # batch size
+        # TODO add 할 지, concat 할 지
+        if not self.total_latent is None:
+            hidden = self.hidden2concat(hidden)
+            latent = self.latent2concat(self.total_latent)
+            hidden = torch.cat((hidden, latent), 2)
+
+        trg_len = nmt_trg.shape[1]  # length of word
+        batch_size = nmt_trg.shape[0]  # batch size
         trg_vocab_size = self.nmt_decoder.output_size
 
-        outputs = torch.zeros(trg_len, batch_size, trg_vocab_size).to(self.device)
-        # size ; [max_len, batch, vocab_size]
+        outputs = torch.zeros(batch_size, trg_len, trg_vocab_size).to(self.device)
 
-        input = nmt_trg[0, :]
+        input = nmt_trg[:, 0]
+
         output_list = []
         for i in range(1, trg_len):
             output, hidden, cell = self.nmt_decoder(input, hidden, cell)
-            outputs[i] = output
+            outputs[:, i] = output
             output_list.append(torch.argmax(output, dim=1).tolist())
-            # outputs[i] = output
             top1 = output.argmax(1)
 
             teacher_force = random.random() < teacher_forcing_ratio
-            input = nmt_trg[i] if teacher_force else top1
-
+            input = nmt_trg[:, i] if teacher_force else top1
 
         return outputs, output_list
 
@@ -157,7 +146,7 @@ class Encoder(nn.Module):
 
         # TODO num_layers=2 -> total_latent [8, batch_size, d_hidden] 이거 어떻게 해결?
         self.encoder = nn.LSTM(input_size=d_embed, hidden_size=d_hidden, dropout=dropout,
-                               num_layers=n_layers, bidirectional=True)
+                               num_layers=n_layers, bidirectional=True, batch_first=True)
         self.dropout = nn.Dropout(dropout)
 
         self.device = device
@@ -175,7 +164,7 @@ class TSTDecoder(nn.Module):
         self.output_size = output_size
         self.trg_embedding = nn.Embedding(output_size, d_embed)
         self.tst_decoder = nn.LSTM(input_size=d_embed, hidden_size=d_hidden, dropout=dropout,
-                                   num_layers=n_layers, bidirectional=True)
+                                   num_layers=n_layers, bidirectional=True, batch_first=True)
 
         self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(2*d_hidden, output_size)
@@ -183,18 +172,12 @@ class TSTDecoder(nn.Module):
         self.device = device
 
     def forward(self, input, hidden, cell):
-        input = input.unsqueeze(0)
-        # input size ; [batch] -> [1, batch]
+        input = input.unsqueeze(1)
         embedded = self.dropout(self.trg_embedding(input))
-        # embedded size ; [1, batch, d_embed]
 
         outputs, (hidden, cell) = self.tst_decoder(embedded, (hidden, cell))
-        # size; output [1, batch, 2*d_hidden], hidden [n_layer*bi, batch, hidden], cell [n_layer*bi, batch, hidden]
 
-
-        tst_out = self.fc(outputs.squeeze(0))
-        # tst_out = self.fc(outputs)
-        # size ; squeeze x [1, batch, vocab_size] / squeeze [batch, vocab_size]
+        tst_out = self.fc(outputs.squeeze(1))
 
         return tst_out, hidden, cell
 
@@ -205,7 +188,7 @@ class NMTDecoder(nn.Module):
         self.output_size = output_size
         self.trg_embedding = nn.Embedding(output_size, d_embed)
         self.nmt_decoder = nn.LSTM(input_size=d_embed, hidden_size=d_hidden, dropout=dropout,
-                                   num_layers=n_layers, bidirectional=True)
+                                   num_layers=n_layers, bidirectional=True, batch_first=True)
 
         self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(2*d_hidden, output_size)
@@ -213,13 +196,9 @@ class NMTDecoder(nn.Module):
         self.device = device
 
     def forward(self, input, hidden, cell):
-        input = input.unsqueeze(0)
-        # size ; [1, batch]
+        input = input.unsqueeze(1)
         embedded = self.dropout(self.trg_embedding(input))
-        # size ; [1, batch, d_embed]
         outputs, (hidden, cell) = self.nmt_decoder(embedded, (hidden, cell))
-        # hidden size ; [n_layer*bi, batch, hidden]
-        nmt_out = self.fc(outputs.squeeze(0))
-        #size ; [batch, vocab_size]
+        nmt_out = self.fc(outputs.squeeze(1))
 
         return nmt_out, hidden, cell

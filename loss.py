@@ -18,6 +18,6 @@ def kl_loss(mu, logv, epoch, k, xo):
     return KL_loss, KL_weight
 
 def ce_loss(out, target):
-    CE = nn.CrossEntropyLoss()
+    CE = nn.CrossEntropyLoss(ignore_index=0)
     CE_loss = CE(out, target)
     return CE_loss
