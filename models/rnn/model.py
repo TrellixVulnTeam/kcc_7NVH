@@ -53,7 +53,6 @@ class StyleTransfer(nn.Module):
 
         encoder_out, hidden, cell = self.encoder(tst_src)
 
-<<<<<<< HEAD:models/rnn/model.py
         if self.variational:
             context_c, context_a = hidden[:, :, :self.content_index], hidden[:, :, -self.style_index:]
 
@@ -72,30 +71,12 @@ class StyleTransfer(nn.Module):
         else:
             latent_variables = [None for _ in range(7)]
 
-=======
-        context_c, context_a = hidden[:, :, :self.content_index], hidden[:, :, -self.style_index:]
-
-        # TODO 따로 따로 reparameterize? 아니면 reparameterize 한 다음에 split?
-        # TODO 나눈 후 size 맞추기 위해 content 밑에/style 위에 0으로 채워서 reparameterize?
-        content_c, content_mu, content_logv = self.reparameterization(context_c, "content")
-        style_a, style_mu, style_logv = self.reparameterization(context_a, "style")
-
-        total_latent = torch.cat((content_c, style_a), 0)
-
-        # TODO cat? add? -> 일단은 total_latent로 진행
-        hidden = total_latent
-
->>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd:model.py
         trg_len = tst_trg.shape[1]  # length of word
         batch_size = tst_trg.shape[0]  # batch size
         trg_vocab_size = self.tst_decoder.output_size
         outputs = torch.zeros(batch_size, trg_len, trg_vocab_size).to(self.device)
 
-<<<<<<< HEAD:models/rnn/model.py
         input = tst_trg[:, 0]  # BOS 먼저
-=======
-        input = tst_trg[:, 0] # BOS 먼저
->>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd:model.py
 
         output_list = []
         for i in range(1, trg_len):
@@ -106,34 +87,22 @@ class StyleTransfer(nn.Module):
 
             teacher_force = random.random() < teacher_forcing_ratio
             input = tst_trg[:, i] if teacher_force else top1
-<<<<<<< HEAD:models/rnn/model.py
 
         return outputs, latent_variables, output_list
 
 class StylizedNMT(nn.Module):
     def __init__(self, nmt_encoder, nmt_decoder, d_hidden, total_latent, device):
-=======
-
-        return outputs, total_latent, content_c, content_mu, content_logv, style_a, style_mu, style_logv, output_list
-
-class StylizedNMT(nn.Module):
-    def __init__(self, nmt_decoder, d_hidden, total_latent, device):
->>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd:model.py
         super(StylizedNMT, self).__init__()
 
         self.device = device
 
-<<<<<<< HEAD:models/rnn/model.py
         self.nmt_encoder = nmt_encoder
-=======
->>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd:model.py
         self.nmt_decoder = nmt_decoder
         self.total_latent = total_latent
 
         self.hidden2concat = nn.Linear(d_hidden, d_hidden // 2)
         self.latent2concat = nn.Linear(d_hidden, d_hidden // 2)
 
-<<<<<<< HEAD:models/rnn/model.py
     def forward(self, nmt_src, nmt_trg, teacher_forcing_ratio=0.5):
 
         # nmt_hidden = nmt_hidden.to(self.device)
@@ -148,18 +117,6 @@ class StylizedNMT(nn.Module):
             hidden = self.hidden2concat(hidden)
             latent = self.latent2concat(self.total_latent)
             hidden = torch.cat((hidden, latent), 2)
-=======
-    def forward(self, nmt_hidden, nmt_cell, nmt_trg, teacher_forcing_ratio=0.5):
-
-        nmt_hidden = nmt_hidden.to(self.device)
-        nmt_cell = nmt_cell.to(self.device)
-        nmt_trg = nmt_trg.to(self.device)
-
-        # TODO add 할 지, concat 할 지
-        hidden = self.hidden2concat(nmt_hidden)
-        latent = self.latent2concat(self.total_latent)
-        hidden = torch.cat((hidden, latent), 2)
->>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd:model.py
 
         trg_len = nmt_trg.shape[1]  # length of word
         batch_size = nmt_trg.shape[0]  # batch size
@@ -171,11 +128,7 @@ class StylizedNMT(nn.Module):
 
         output_list = []
         for i in range(1, trg_len):
-<<<<<<< HEAD:models/rnn/model.py
             output, hidden, cell = self.nmt_decoder(input, hidden, cell)
-=======
-            output, hidden, cell = self.nmt_decoder(input, hidden, nmt_cell)
->>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd:model.py
             outputs[:, i] = output
             output_list.append(torch.argmax(output, dim=1).tolist())
             top1 = output.argmax(1)
