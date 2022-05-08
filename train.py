@@ -9,8 +9,11 @@ import os
 
 import torch
 from torch import nn
+<<<<<<< HEAD
 import torch.nn.functional as F
 import torch.optim as optim
+=======
+>>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd
 from torch.utils.data import DataLoader
 
 import sentencepiece as spm
@@ -30,7 +33,14 @@ torch.autograd.set_detect_anomaly(True)
 def cal_performance(pred, gold, trg_pad_idx, smoothing=False):
     ''' Apply label smoothing if needed '''
 
+<<<<<<< HEAD
     loss = cal_loss(pred, gold, trg_pad_idx, smoothing=smoothing)
+=======
+    with tqdm.tqdm(total=total) as pbar:
+        for _, (src, trg) in enumerate(data_loader):
+            src = src.to(device)
+            trg = trg.to(device)
+>>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd
 
     pred = pred.max(1)[1]
     gold = gold.contiguous().view(-1)
@@ -40,11 +50,23 @@ def cal_performance(pred, gold, trg_pad_idx, smoothing=False):
 
     return loss, n_correct, n_word
 
+<<<<<<< HEAD
 
 def cal_loss(pred, gold, trg_pad_idx, smoothing=False):
     ''' Calculate cross entropy loss, apply label smoothing if needed. '''
 
     gold = gold.contiguous().view(-1)
+=======
+            tst_out = tst_out[:, 1:].reshape(-1, tst_out.size(-1))
+
+            trg_trg = trg[:, 1:].reshape(-1)
+
+            CE_loss = ce_loss(tst_out, trg_trg)
+            KL_loss, KL_weight = kl_loss(style_mu, style_logv, epoch, 0.0025, 2500)
+            tst_loss = (CE_loss + KL_loss * KL_weight)
+            loss_value = tst_loss.item()
+            train_loss = train_loss + loss_value
+>>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd
 
     if smoothing:
         eps = 0.1
@@ -54,6 +76,7 @@ def cal_loss(pred, gold, trg_pad_idx, smoothing=False):
         one_hot = one_hot * (1 - eps) + (1 - one_hot) * eps / (n_class - 1)
         log_prb = F.log_softmax(pred, dim=1)
 
+<<<<<<< HEAD
         non_pad_mask = gold.ne(trg_pad_idx)
         loss = -(one_hot * log_prb).sum(dim=1)
         loss = loss.masked_select(non_pad_mask).sum()  # average later
@@ -65,8 +88,17 @@ def cal_loss(pred, gold, trg_pad_idx, smoothing=False):
 def patch_src(src, pad_idx):
     src = src.transpose(0, 1)
     return src
+=======
+@torch.no_grad()    #no autograd (backpropagation X)
+def tst_evaluate(tst_model, epoch, data_loader, device):
+    tst_model.eval()
+
+    valid_loss = 0.0
+    total = len(data_loader)
+>>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd
 
 
+<<<<<<< HEAD
 def patch_trg(trg, pad_idx):
     trg = trg.transpose(0, 1)
     # trg, gold = trg[:-1, :], trg[1:, :].contiguous().view(-1)
@@ -145,10 +177,34 @@ def train_epoch(model, training_data, optimizer, opt, device, smoothing):
 
 def eval_epoch(model, validation_data, device, opt):
     ''' Epoch operation in evaluation phase '''
+=======
+            tst_out, total_latent, content_c, content_mu, content_logv, style_a, style_mu, style_logv, output_list = tst_model(src, trg)
+
+            tst_out = tst_out[:, 1:].reshape(-1, tst_out.size(-1))
+
+            trg_trg = trg[:, 1:].reshape(-1)
+
+            CE_loss = ce_loss(tst_out, trg_trg)
+            KL_loss, KL_weight = kl_loss(style_mu, style_logv, epoch, 0.0025, 2500)
+            tst_loss = (CE_loss + KL_loss * KL_weight)
+            loss_value = tst_loss.item()
+            valid_loss += loss_value
+
+            pbar.update(1)
+
+    return valid_loss/total, trg[:, 1:].tolist(), output_list
+
+def nmt_train_one_epoch(tst_encoder, nmt_model, data_loader, nmt_optimizer, device):
+    nmt_model.train()
+
+    train_loss = 0.0
+    total = len(data_loader)
+>>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd
 
     model.eval()
     total_loss, n_word_total, n_word_correct = 0, 0, 0
 
+<<<<<<< HEAD
     desc = '  - (Validation) '
     total = len(validation_data)
     with torch.no_grad():
@@ -172,14 +228,44 @@ def eval_epoch(model, validation_data, device, opt):
     accuracy = n_word_correct / n_word_total
 
     return loss_per_word, accuracy, trg, out
+=======
+            _, nmt_hidden, nmt_cell = tst_encoder(src)
+
+            nmt_hidden = nmt_hidden.detach().to(device)
+            nmt_cell = nmt_cell.detach().to(device)
+
+            nmt_out, output_list = nmt_model(nmt_hidden, nmt_cell, trg)
+
+            nmt_out = nmt_out[:, 1:].detach().reshape(-1, nmt_out.size(-1))
+
+            trg_trg = trg[:, 1:].detach().reshape(-1)
 
 
+            nmt_loss = ce_loss(nmt_out, trg_trg)
+            loss_value = nmt_loss.item()
+            train_loss = train_loss + loss_value
+
+            nmt_optimizer.zero_grad()  # optimizer 초기화
+            nmt_loss.requires_grad_(True)
+            nmt_loss.backward(retain_graph=True)
+            nmt_optimizer.step()    # Gradient Descent 시작
+>>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd
+
+
+<<<<<<< HEAD
 def train(model, training_data, validation_data, optimizer, device, opt):
     ''' Start training '''
     log_train_file = os.path.join(opt.output_dir, 'train.log')
     log_valid_file = os.path.join(opt.output_dir, 'valid.log')
 
     print(f'[Info] Training performance will be written to file: {log_train_file} and {log_valid_file}')
+=======
+    return train_loss/total, trg[:, 1:].tolist(), output_list
+
+@torch.no_grad()    #no autograd (backpropagation X)
+def nmt_evaluate(tst_encoder, nmt_model, data_loader, device):
+    nmt_model.eval()
+>>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd
 
     with open(log_train_file, 'w') as log_tf, open(log_valid_file, 'w') as log_vf:
         log_tf.write('epoch,loss,ppl,accuracy\n')
@@ -188,6 +274,7 @@ def train(model, training_data, validation_data, optimizer, device, opt):
     def print_performances(header, ppl, accu, loss, start_time, lr):
         print(f'  - {header:12} ppl: {ppl: 8.5f}, accuracy: {accu*100:3.3f} %, loss: {loss:.5f}, lr: {lr:8.5f}, elapse: {(time.time() - start_time)/60:3.3f} min')
 
+<<<<<<< HEAD
 
     # valid_accus = []
     valid_losses = []
@@ -211,10 +298,37 @@ def train(model, training_data, validation_data, optimizer, device, opt):
         valid_loss, valid_accu, valid_trg, valid_out = eval_epoch(model, validation_data, device, opt)
         valid_ppl = math.exp(min(valid_loss, 100))
         print_performances('Validation', valid_ppl, valid_accu, valid_loss, start, lr)
+=======
+            _, nmt_hidden, nmt_cell = tst_encoder(src)
+
+            nmt_hidden = nmt_hidden.detach().to(device)
+            nmt_cell = nmt_cell.detach().to(device)
+
+            nmt_out, output_list = nmt_model(nmt_hidden, nmt_cell, trg)
+
+            nmt_out = nmt_out[:, 1:].detach().reshape(-1, nmt_out.size(-1))
+
+            trg_trg = trg[:, 1:].detach().reshape(-1)
+
+            CE_loss = ce_loss(nmt_out, trg_trg)
+            nmt_loss = CE_loss
+            loss_value = nmt_loss.item()
+            valid_loss += loss_value
+
+            pbar.update(1)
+>>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd
 
         valid_losses += [valid_loss]
 
+<<<<<<< HEAD
         checkpoint = {'epoch': epoch_i, 'settings': opt, 'model': model.state_dict()}
+=======
+def train():
+    # Device Setting
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f'Initializing Device: {device}')
+    print(f'Count of using GPUs:{torch.cuda.device_count()}')
+>>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd
 
         if opt.save_mode == 'all':
             model_name = 'model_accu_{accu:3.3f}.chkpt'.format(accu=100 * valid_accu)
@@ -261,12 +375,25 @@ def main():
     parser.add_argument('--decode_path', default="/HDD/yehoon/data/transformer_output/decode")
 
 
+<<<<<<< HEAD
     parser.add_argument('--epoch', type=int, default=10)
     parser.add_argument('--batch_size', type=int, default=100)
     parser.add_argument('--num_workers', type=int, default=1)
     parser.add_argument('--n_warmup_steps', type=int, default=4000)
+=======
+    # TST Train
+    tst_encoder = Encoder(input_size=nmt_vocab_size, d_hidden=1024, d_embed=256, n_layers=2, dropout=0.1, device=device)
+    tst_decoder = TSTDecoder(output_size=tst_vocab_size, d_hidden=1024, d_embed=256, n_layers=2, dropout=0.1, device=device)
+    tst_model = StyleTransfer(tst_encoder, tst_decoder, d_hidden=1024, style_ratio=0.3, device=device)
+    tst_model = tst_model.to(device)
+>>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd
 
 
+<<<<<<< HEAD
+=======
+    start_epoch = 0
+    epochs = 10
+>>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd
 
     parser.add_argument('--min_len', type=int, default=2)
     parser.add_argument('--max_len', type=int, default=300)
@@ -291,16 +418,29 @@ def main():
     parser.add_argument('--proj_share_weight', action='store_true')
     parser.add_argument('--scale_emb_or_prj', type=str, default='prj')
 
+<<<<<<< HEAD
     parser.add_argument('--output_dir', type=str, default="/HDD/yehoon/data/transformer_output/")
     parser.add_argument('--use_tb', action='store_true')
     parser.add_argument('--save_mode', type=str, choices=['all', 'best'], default='best')
+=======
+        print(f"Training Loss: {epoch_loss:.5f}")
+>>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd
 
     parser.add_argument('--no_cuda', action='store_true')
     parser.add_argument('--label_smoothing', action='store_true')
 
+<<<<<<< HEAD
     opt = parser.parse_args()
     opt.cuda = not opt.no_cuda
     opt.d_word_vec = opt.d_model
+=======
+        tst_train_out_list = list(map(list, zip(*tst_train_out_list)))
+        tst_valid_out_list = list(map(list, zip(*tst_valid_out_list)))
+
+        tst_train_target_decode = [tst_tokenizer.DecodeIds(i) for i in tst_train_trg_list]
+        tst_train_output_decoder = [tst_tokenizer.DecodeIds(j) for j in tst_train_out_list]
+        tst_train_decode_output.append((tst_train_target_decode, tst_train_output_decoder))
+>>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd
 
     # https://pytorch.org/docs/stable/notes/randomness.html
     # For reproducibility
@@ -315,6 +455,7 @@ def main():
         print('No experiment result will be saved.')
         raise
 
+<<<<<<< HEAD
     if not os.path.exists(opt.output_dir):
         os.makedirs(opt.output_dir)
 
@@ -334,6 +475,41 @@ def main():
     with open(opt.data_pkl, "rb") as f:
         data = pickle.load(f)
         f.close()
+=======
+    nmt_encoder = tst_model.encoder.requires_grad_(False)
+    nmt_encoder = nmt_encoder.to(device)
+    nmt_decoder = NMTDecoder(output_size=nmt_vocab_size, d_hidden=1024, d_embed=256, n_layers=2, dropout=0.1, device=device)
+    nmt_model = StylizedNMT(nmt_decoder, d_hidden=1024, total_latent=total_latent, device=device)
+    nmt_model = nmt_model.to(device)
+
+    nmt_optimizer = torch.optim.AdamW(nmt_model.nmt_decoder.parameters(), lr=0.001)
+
+    start_epoch = 0
+    epochs = 10
+
+    print("Start NMT Training..")
+
+    nmt_tokenizer = spm.SentencePieceProcessor()
+    nmt_tokenizer.Load("/HDD/yehoon/data/tokenizer/train_pair_kor_spm.model")
+
+    nmt_train_decode_output = []
+    nmt_valid_decode_output = []
+
+    for epoch in range(start_epoch, epochs + 1):
+        print(f"Epoch: {epoch}")
+        epoch_loss , nmt_train_trg_list, nmt_train_out_list= nmt_train_one_epoch(nmt_encoder, nmt_model, nmt_train_loader, nmt_optimizer, device)
+        print(f"Training Loss: {epoch_loss:.5f}")
+
+        valid_loss, nmt_valid_trg_list, nmt_valid_out_list = nmt_evaluate(nmt_encoder, nmt_model, nmt_valid_loader, device)
+        print(f"Validation Loss: {valid_loss:.5f}")
+
+        nmt_train_out_list = list(map(list, zip(*nmt_train_out_list)))
+        nmt_valid_out_list = list(map(list, zip(*nmt_valid_out_list)))
+
+        nmt_train_target_decode = [nmt_tokenizer.DecodeIds(i) for i in nmt_train_trg_list]
+        nmt_train_output_decoder = [nmt_tokenizer.DecodeIds(j) for j in nmt_train_out_list]
+        nmt_train_decode_output.append((nmt_train_target_decode, nmt_train_output_decoder))
+>>>>>>> d6763e081e2c6aef0b836f9309640b7d6a8f81fd
 
     em_informal = data["gyafc"]["train"]["em_informal"]
     em_formal = data["gyafc"]["train"]["em_formal"]
