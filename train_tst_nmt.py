@@ -245,7 +245,7 @@ def main():
 
     parser.add_argument('-tst_vocab_size', type=int, default=8757)
     parser.add_argument('-d_model', type=int, default=512)
-    parser.add_argument('-d_latent', type=int, default=1024)
+    parser.add_argument('-d_latent', type=int, default=256)
     parser.add_argument('-d_inner_hid', type=int, default=2048)
     parser.add_argument('-d_k', type=int, default=64)
     parser.add_argument('-d_v', type=int, default=64)
