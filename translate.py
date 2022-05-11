@@ -118,14 +118,10 @@ def main():
     unk_idx = SRC.vocab.stoi[SRC.unk_token]
     with open(os.path.join(opt.output, opt.file_name), 'w') as f:
         for example in tqdm(test_loader, mininterval=2, desc='  - (Test)', leave=False):
-            # print("hi")
-            print("src:", ' '.join(example.src))
             src_seq = [SRC.vocab.stoi.get(word, unk_idx) for word in example.src]
             pred_seq = translator.translate_sentence(torch.LongTensor([src_seq]).to(device))
-            # print("pred_sqe", pred_seq)
             pred_line = ' '.join(TRG.vocab.itos[idx] for idx in pred_seq)
             pred_line = pred_line.replace(Constants.BOS_WORD, '').replace(Constants.EOS_WORD, '')
-            print("predline:", pred_line, "\n")
             f.write(pred_line.strip() + '\n')
 
     print('[Info] Finished.')
