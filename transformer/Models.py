@@ -261,25 +261,23 @@ class VAETransformer(nn.Module):
 
         self.latent2hidden = nn.Linear(self.d_latent, self.d_model)
 
-    def reparameterization(self, hidden):
-        mean = self.hidden2mean(hidden)
-        logv = self.hidden2logv(hidden)
-
+    def reparameterize(self, mean, logv):
         std = torch.exp(0.5 * logv)
         eps = torch.randn_like(std)
         z = mean + (eps * std)
-        return z, mean, logv
+        return z
 
     def forward(self, src_seq, trg_seq):
-
         src_mask = get_pad_mask(src_seq, self.src_pad_idx)
         trg_mask = get_pad_mask(trg_seq, self.trg_pad_idx) & get_subsequent_mask(trg_seq)
 
         enc_output, *_ = self.encoder(src_seq, src_mask)
+
+        mean = self.hidden2mean(enc_output)
+        logv = self.hidden2logv(enc_output)
+        z = self.reparameterize(mean, logv)
         # size: [batch, len, d_model]
 
-        # reparameterization
-        z, mean, logv = self.reparameterization(enc_output)
         z_hidden = self.latent2hidden(z)
 
         dec_output, *_ = self.decoder(trg_seq, trg_mask, z_hidden, src_mask)

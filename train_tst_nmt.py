@@ -45,8 +45,8 @@ def cal_loss(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smoothing=
         # gold torch.Size([1792])
         log_prb = F.log_softmax(pred, dim=1)
         ce_loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
-        KL_loss = kl_loss(mean, logv, epoch, 0.0025, 2500)
-        loss = ce_loss + KL_loss
+        KL_loss, KL_weight = kl_loss(mean, logv, epoch, 0.0025, 2500)
+        loss = ce_loss + KL_loss*KL_weight
     else:
         if smoothing:
             eps = 0.1
@@ -97,7 +97,8 @@ def train_epoch(model, training_data, optimizer, opt, epoch, device, smoothing):
 
             # backward and update parameters
             loss, n_correct, n_word = cal_performance(
-                pred, gold, opt.trg_pad_idx, opt.variational, mean, logv, epoch, smoothing=smoothing)
+                pred, gold, opt.trg_pad_idx, mean, logv, opt.variational, epoch, smoothing=smoothing)
+            # print("loss", loss.shape)
             loss.backward()
             optimizer.step_and_update_lr()
 
@@ -106,7 +107,7 @@ def train_epoch(model, training_data, optimizer, opt, epoch, device, smoothing):
 
             # backward and update parameters
             loss, n_correct, n_word = cal_performance(
-                pred, gold, opt.trg_pad_idx, opt.variational, mean, logv, epoch, smoothing=smoothing)
+                pred, gold, opt.trg_pad_idx, mean, logv, opt.variational, epoch, smoothing=smoothing)
             loss.backward()
             optimizer.step_and_update_lr()
         After = [p for p in model.encoder.parameters()]
@@ -208,7 +209,7 @@ def train(model, training_data, validation_data, optimizer, device, opt):
 
         if opt.save_mode == 'all':
             model_name = 'model_accu_{accu:3.3f}.chkpt'.format(accu=100*valid_accu)
-            torch.save(checkpoint, opt.model_name)
+            torch.save(checkpoint, os.path.join(opt.output_dir, opt.model_name))
         elif opt.save_mode == 'best':
             if valid_loss <= min(valid_losses):
                 torch.save(checkpoint, os.path.join(opt.output_dir, opt.model_name))
