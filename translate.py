@@ -1,9 +1,10 @@
 ''' Translate input text with trained model. '''
-
-import torch
+import os
 import argparse
 import dill as pickle
 from tqdm import tqdm
+
+import torch
 
 import transformer.Constants as Constants
 from torchtext.data import Dataset
@@ -71,9 +72,10 @@ def main():
                         help='Path to model weight file')
     parser.add_argument('-data_pkl', required=True,
                         help='Pickle file with both instances and vocabulary.')
-    parser.add_argument('-output', default='/output/pred.txt',
+    parser.add_argument('-output', default='/output/pred_text',
                         help="""Path to output the predictions (each line will
                         be the decoded sequence""")
+    parser.add_argument('-file_name', default=None)
     parser.add_argument('-beam_size', type=int, default=5)
     parser.add_argument('-max_seq_len', type=int, default=100)
     parser.add_argument('-no_cuda', action='store_true')
@@ -114,7 +116,7 @@ def main():
         trg_eos_idx=opt.trg_eos_idx).to(device)
 
     unk_idx = SRC.vocab.stoi[SRC.unk_token]
-    with open(opt.output, 'w') as f:
+    with open(os.path.join(opt.output, opt.file_name), 'w') as f:
         for example in tqdm(test_loader, mininterval=2, desc='  - (Test)', leave=False):
             # print("hi")
             print("src:", ' '.join(example.src))
