@@ -5,6 +5,7 @@
 """Use byte pair encoding (BPE) to learn a variable-length encoding of the vocabulary in a text.
 Unlike the original BPE, it does not compress the plain text, but can be used to reduce the vocabulary
 of a text to a configurable number of symbols, with only a small increase in the number of tokens.
+
 Reference:
 Rico Sennrich, Barry Haddow and Alexandra Birch (2016). Neural Machine Translation of Rare Words with Subword Units.
 Proceedings of the 54th Annual Meeting of the Association for Computational Linguistics (ACL 2016). Berlin, Germany.
@@ -45,6 +46,7 @@ def update_vocabulary(vocab, file_name, is_dict=False):
 
 def update_pair_statistics(pair, changed, stats, indices):
     """Minimally update the indices and frequency of symbol pairs
+
     if we merge a pair of symbols, only pairs that overlap with occurrences
     of this pair are affected, and need to be updated.
     """
@@ -146,6 +148,7 @@ def replace_pair(pair, vocab, indices):
 
 def prune_stats(stats, big_stats, threshold):
     """Prune statistics dict for efficiency of max()
+
     The frequency of a symbol pair never increases, so pruning is generally safe
     (until we the most frequent pair is less frequent than a pair we previously pruned)
     big_stats keeps full statistics for when we need to access pruned items
@@ -225,3 +228,4 @@ def learn_bpe(infile_names, outfile_name, num_symbols, min_frequency=2, verbose=
             stats[most_frequent] = 0
             if not i % 100:
                 prune_stats(stats, big_stats, threshold)
+
