@@ -179,11 +179,8 @@ def train(model, training_data, validation_data, optimizer, device, opt):
         log_tf.write('epoch,loss,ppl,accuracy\n')
         log_vf.write('epoch,loss,ppl,accuracy\n')
 
-    def print_performances(header, ppl, accu, start_time, lr):
-        print('  - {header:12} ppl: {ppl: 8.5f}, accuracy: {accu:3.3f} %, lr: {lr:8.5f}, '\
-              'elapse: {elapse:3.3f} min'.format(
-                  header=f"({header})", ppl=ppl,
-                  accu=100*accu, elapse=(time.time()-start_time)/60, lr=lr))
+    def print_performances(header, ppl, accu, loss, start_time, lr):
+        print(f'  - {header:12} ppl: {ppl: 8.5f}, accuracy: {accu * 100:3.3f} %, loss: {loss:.5f}, lr: {lr:8.5f}, elapse: {(time.time() - start_time) / 60:3.3f} min')
 
     #valid_accus = []
     valid_losses = []
@@ -196,12 +193,12 @@ def train(model, training_data, validation_data, optimizer, device, opt):
         train_ppl = math.exp(min(train_loss, 100))
         # Current learning rate
         lr = optimizer._optimizer.param_groups[0]['lr']
-        print_performances('Training', train_ppl, train_accu, start, lr)
+        print_performances('Training', train_ppl, train_accu, train_loss, start, lr)
 
         start = time.time()
         valid_loss, valid_accu = eval_epoch(model, validation_data, epoch_i, device, opt)
         valid_ppl = math.exp(min(valid_loss, 100))
-        print_performances('Validation', valid_ppl, valid_accu, start, lr)
+        print_performances('Validation', valid_ppl, valid_accu, valid_loss, start, lr)
 
         valid_losses += [valid_loss]
 

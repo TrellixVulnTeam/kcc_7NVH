@@ -1,7 +1,3 @@
-'''
-This script handles the training process.
-'''
-
 import argparse
 import math
 import time
@@ -19,12 +15,9 @@ from torchtext.data import Field, Dataset, BucketIterator
 from torchtext.datasets import TranslationDataset
 
 import transformer.Constants as Constants
-from transformer.Models import Transformer, VAETransformer
+from transformer.Models import Transformer, VAETransformer, Encoder
 from transformer.Optim import ScheduledOptim
 from loss import kl_loss
-
-__author__ = "Yu-Hsiang Huang"
-
 
 
 
@@ -49,14 +42,10 @@ def cal_loss(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smoothing=
     if variational is True:
         # pred torch.Size([1792, 8757])
         # gold torch.Size([1792])
-        print("pred", pred.size())
-        print("gold", gold.size())
         log_prb = F.log_softmax(pred, dim=1)
-        print("log_prb", log_prb.size())
-        print("gold.view(-1, 1)", gold.view(-1, 1).size())
         ce_loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
-        KL_loss = kl_loss(mean, logv, epoch, 0.0025, 2500)
-        loss = ce_loss + KL_loss
+        KL_loss, KL_weight = kl_loss(mean, logv, epoch, 0.0025, 2500)
+        loss = ce_loss + KL_loss*KL_weight
     else:
         if smoothing:
             eps = 0.1
@@ -94,7 +83,8 @@ def train_epoch(model, training_data, optimizer, opt, epoch, device, smoothing):
 
     desc = '  - (Training)   '
     for batch in tqdm(training_data, mininterval=2, desc=desc, leave=False):
-
+        Before = [p for p in model.encoder.parameters()]
+        # print(Before)
         # prepare data
         src_seq = patch_src(batch.src, opt.src_pad_idx).to(device)
         trg_seq, gold = map(lambda x: x.to(device), patch_trg(batch.trg, opt.trg_pad_idx))
@@ -106,7 +96,8 @@ def train_epoch(model, training_data, optimizer, opt, epoch, device, smoothing):
 
             # backward and update parameters
             loss, n_correct, n_word = cal_performance(
-                pred, gold, opt.trg_pad_idx, opt.variational, mean, logv, epoch, smoothing=smoothing)
+                pred, gold, opt.trg_pad_idx, mean, logv, opt.variational, epoch, smoothing=smoothing)
+            # print("loss", loss.shape)
             loss.backward()
             optimizer.step_and_update_lr()
 
@@ -115,9 +106,12 @@ def train_epoch(model, training_data, optimizer, opt, epoch, device, smoothing):
 
             # backward and update parameters
             loss, n_correct, n_word = cal_performance(
-                pred, gold, opt.trg_pad_idx, opt.variational, mean, logv, epoch, smoothing=smoothing)
+                pred, gold, opt.trg_pad_idx, mean, logv, opt.variational, epoch, smoothing=smoothing)
             loss.backward()
             optimizer.step_and_update_lr()
+        After = [p for p in model.encoder.parameters()]
+        # print("[Differ]", torch.equal(torch.Tensor(Before), torch.Tensor(After)))
+        # print(Before==After)
 
         # note keeping
         n_word_total += n_word
@@ -126,6 +120,7 @@ def train_epoch(model, training_data, optimizer, opt, epoch, device, smoothing):
 
     loss_per_word = total_loss/n_word_total
     accuracy = n_word_correct/n_word_total
+
     return loss_per_word, accuracy
 
 
@@ -189,7 +184,10 @@ def train(model, training_data, validation_data, optimizer, device, opt):
     #valid_accus = []
     valid_losses = []
     for epoch_i in range(opt.epoch):
-        print('[ Epoch', epoch_i, ']')
+        if opt.variational:
+            print('[ VAE Epoch', epoch_i, ']')
+        else:
+            print('[ Epoch', epoch_i, ']')
 
         start = time.time()
         train_loss, train_accu = train_epoch(
@@ -209,8 +207,8 @@ def train(model, training_data, validation_data, optimizer, device, opt):
         checkpoint = {'epoch': epoch_i, 'settings': opt, 'model': model.state_dict(), 'encoder': model.encoder.state_dict()}
 
         if opt.save_mode == 'all':
-            opt.model_name = 'model_accu_{accu:3.3f}.chkpt'.format(accu=100*valid_accu)
-            torch.save(checkpoint, opt.model_name)
+            model_name = 'model_accu_{accu:3.3f}.chkpt'.format(accu=100*valid_accu)
+            torch.save(checkpoint, os.path.join(opt.output_dir, opt.model_name))
         elif opt.save_mode == 'best':
             if valid_loss <= min(valid_losses):
                 torch.save(checkpoint, os.path.join(opt.output_dir, opt.model_name))
@@ -247,6 +245,7 @@ def main():
     parser.add_argument('-epoch', type=int, default=10)
     parser.add_argument('-b', '--batch_size', type=int, default=2048)
 
+    parser.add_argument('-tst_vocab_size', type=int, default=8757)
     parser.add_argument('-d_model', type=int, default=512)
     parser.add_argument('-d_latent', type=int, default=1024)
     parser.add_argument('-d_inner_hid', type=int, default=2048)
@@ -311,9 +310,14 @@ def main():
 
     print(opt)
 
+    assert opt.scale_emb_or_prj in ['emb', 'prj', 'none']
+    scale_emb = (opt.scale_emb_or_prj == 'emb') if opt.proj_share_weight else False
+    scale_prj = (opt.scale_emb_or_prj == 'prj') if opt.proj_share_weight else False
+
+
     if opt.variational:
         transformer = VAETransformer(
-            opt.src_vocab_size,
+            opt.tst_vocab_size,
             opt.trg_vocab_size,
             src_pad_idx=opt.src_pad_idx,
             trg_pad_idx=opt.trg_pad_idx,
@@ -329,7 +333,10 @@ def main():
             n_head=opt.n_head,
             dropout=opt.dropout,
             scale_emb_or_prj=opt.scale_emb_or_prj).to(device)
+        # transformer.load_state_dict(torch.load("output/vae/model.chkpt")['model'])
         # transformer = nn.DataParallel(transformer).to(device)
+
+
     else:
         transformer = Transformer(
             opt.src_vocab_size,
@@ -400,6 +407,7 @@ def prepare_dataloaders(opt, device):
 
     opt.src_vocab_size = len(data['vocab']['src'].vocab)
     opt.trg_vocab_size = len(data['vocab']['trg'].vocab)
+
 
     #========= Preparing Model =========#
     if opt.embs_share_weight:
