@@ -40,12 +40,8 @@ def cal_loss(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smoothing=
 
     gold = gold.contiguous().view(-1)
     if variational is True:
-        # pred torch.Size([1792, 8757])
-        # gold torch.Size([1792])
-        log_prb = F.log_softmax(pred, dim=1)
-        ce_loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
-        KL_loss, KL_weight = kl_loss(mean, logv, epoch, 0.0025, 2500)
-        loss = ce_loss + KL_loss*KL_weight
+        # ce_loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
+        loss = kl_loss(pred, gold, mean, logv, trg_pad_idx)
     else:
         if smoothing:
             eps = 0.1

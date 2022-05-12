@@ -44,7 +44,7 @@ class Translator(nn.Module):
         elif self.opt.task_type == 'nmt':
             dec_output, *_ = self.model.nmt_decoder(trg_seq, trg_mask, enc_output, src_mask)
         else:
-            self.dec_output, *_ = self.model.decoder(trg_seq, trg_mask, enc_output, src_mask)
+            dec_output, *_ = self.model.decoder(trg_seq, trg_mask, enc_output, src_mask)
         return F.softmax(self.model.trg_word_prj(dec_output), dim=-1)
 
 

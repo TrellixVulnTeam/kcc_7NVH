@@ -102,6 +102,7 @@ def train_epoch(model, training_data, optimizer, opt, epoch, device, smoothing):
             optimizer.step_and_update_lr()
 
         else:
+            mean = logv = 0
             pred = model(src_seq, trg_seq)
 
             # backward and update parameters
@@ -141,6 +142,7 @@ def eval_epoch(model, validation_data, epoch, device, opt):
                     pred, gold, opt.trg_pad_idx, opt.variational, mean, logv, epoch, smoothing=False)
 
             else:
+                mean = logv = 0
                 # forward
                 pred = model(src_seq, trg_seq)
                 loss, n_correct, n_word = cal_performance(

@@ -357,7 +357,7 @@ class VAETransformer(nn.Module):
 
         mean = self.hidden2mean(enc_output)
         logv = self.hidden2logv(enc_output)
-        z = self.reparameterize(mean, logv)
+        z = self.reparameterize(mean, logv, )
         # size: [batch, len, d_model]
 
         z_hidden = self.latent2hidden(z)
