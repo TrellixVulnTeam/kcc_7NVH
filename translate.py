@@ -8,7 +8,7 @@ import torch
 
 import transformer.Constants as Constants
 from torchtext.data import Dataset
-from transformer.Models import Transformer, VAETransformer
+from transformer.Models import Transformer, VAETransformer, DualVAETransformer
 from transformer.Translator import Translator
 
 
@@ -18,6 +18,29 @@ def load_model(opt, device):
     model_opt = checkpoint['settings']
     if opt.variational:
         model = VAETransformer(
+            model_opt.src_vocab_size,
+            model_opt.trg_vocab_size,
+
+            model_opt.src_pad_idx,
+            model_opt.trg_pad_idx,
+
+            trg_emb_prj_weight_sharing=model_opt.proj_share_weight,
+            emb_src_trg_weight_sharing=model_opt.embs_share_weight,
+            d_k=model_opt.d_k,
+            d_v=model_opt.d_v,
+            d_model=model_opt.d_model,
+            d_latent=model_opt.d_latent,
+            d_word_vec=model_opt.d_word_vec,
+            d_inner=model_opt.d_inner_hid,
+            n_layers=model_opt.n_layers,
+            n_head=model_opt.n_head,
+            dropout=model_opt.dropout).to(device)
+        model.load_state_dict(checkpoint['model'])
+        print('[Info] Trained model state loaded.')
+        return model
+    elif opt.split:
+        model = DualVAETransformer(
+            opt.task_type,
             model_opt.src_vocab_size,
             model_opt.trg_vocab_size,
 
@@ -72,7 +95,7 @@ def main():
                         help='Path to model weight file')
     parser.add_argument('-data_pkl', required=True,
                         help='Pickle file with both instances and vocabulary.')
-    parser.add_argument('-output', default='/output/pred_text',
+    parser.add_argument('-output', default='output/pred_text',
                         help="""Path to output the predictions (each line will
                         be the decoded sequence""")
     parser.add_argument('-file_name', default=None)
@@ -80,6 +103,8 @@ def main():
     parser.add_argument('-max_seq_len', type=int, default=100)
     parser.add_argument('-no_cuda', action='store_true')
     parser.add_argument('-variational', action='store_true')
+    parser.add_argument('-split', action='store_true')
+    parser.add_argument('-task_type', type=str, default=None, choices=["tst", "nmt"])
 
     # TODO: Translate bpe encoded files 
     #parser.add_argument('-src', required=True,
@@ -106,7 +131,7 @@ def main():
     test_loader = Dataset(examples=data['test'], fields={'src': SRC, 'trg': TRG})
     
     device = torch.device('cuda' if opt.cuda else 'cpu')
-    translator = Translator(
+    translator = Translator(opt,
         model=load_model(opt, device),
         beam_size=opt.beam_size,
         max_seq_len=opt.max_seq_len,

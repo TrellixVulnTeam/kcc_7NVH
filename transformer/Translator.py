@@ -10,11 +10,12 @@ class Translator(nn.Module):
     ''' Load a trained model and translate in beam search fashion. '''
 
     def __init__(
-            self, model, beam_size, max_seq_len,
+            self, opt, model, beam_size, max_seq_len,
             src_pad_idx, trg_pad_idx, trg_bos_idx, trg_eos_idx):
         
 
         super(Translator, self).__init__()
+        self.opt = opt
 
         self.alpha = 0.7
         self.beam_size = beam_size
@@ -38,7 +39,12 @@ class Translator(nn.Module):
 
     def _model_decode(self, trg_seq, enc_output, src_mask):
         trg_mask = get_subsequent_mask(trg_seq)
-        dec_output, *_ = self.model.decoder(trg_seq, trg_mask, enc_output, src_mask)
+        if self.opt.task_type == 'tst':
+            dec_output, *_ = self.model.tst_decoder(trg_seq, trg_mask, enc_output, src_mask)
+        elif self.opt.task_type == 'nmt':
+            dec_output, *_ = self.model.nmt_decoder(trg_seq, trg_mask, enc_output, src_mask)
+        else:
+            self.dec_output, *_ = self.model.decoder(trg_seq, trg_mask, enc_output, src_mask)
         return F.softmax(self.model.trg_word_prj(dec_output), dim=-1)
 
 
