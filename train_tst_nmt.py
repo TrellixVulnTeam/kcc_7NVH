@@ -204,11 +204,19 @@ def train(model, training_data, validation_data, optimizer, device, opt):
 
         checkpoint = {'epoch': epoch_i, 'settings': opt, 'model': model.state_dict(), 'encoder': model.encoder.state_dict()}
 
+        # [train_loss, train_accuracy, train_ppl, valid_loss, valid_accuracy, valid_ppl)
+        best_loss = [0 for _ in range(6)]
         if opt.save_mode == 'all':
             model_name = 'model_accu_{accu:3.3f}.chkpt'.format(accu=100*valid_accu)
             torch.save(checkpoint, os.path.join(opt.output_dir, opt.model_name))
         elif opt.save_mode == 'best':
             if valid_loss <= min(valid_losses):
+                best_loss[0] = train_loss
+                best_loss[1] = train_accu
+                best_loss[2] = train_ppl
+                best_loss[3] = valid_loss
+                best_loss[4] = valid_accu
+                best_loss[5] = valid_ppl
                 torch.save(checkpoint, os.path.join(opt.output_dir, opt.model_name))
                 print('    - [Info] The checkpoint file has been updated.')
 
@@ -224,6 +232,8 @@ def train(model, training_data, validation_data, optimizer, device, opt):
             tb_writer.add_scalars('ppl', {'train': train_ppl, 'val': valid_ppl}, epoch_i)
             tb_writer.add_scalars('accuracy', {'train': train_accu*100, 'val': valid_accu*100}, epoch_i)
             tb_writer.add_scalar('learning_rate', lr, epoch_i)
+    print_performances('Best-Train', best_loss[2], best_loss[1], best_loss[0], time.time(), 0)
+    print_performances('Best-Valid', best_loss[5], best_loss[4], best_loss[3], time.time(), 0)
 
 def main():
     '''
