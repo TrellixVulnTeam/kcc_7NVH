@@ -209,7 +209,6 @@ def train(model, training_data, validation_data, optimizer, device, opt):
         # [train_loss, train_accuracy, train_ppl, valid_loss, valid_accuracy, valid_ppl)
         best_loss = [0 for _ in range(6)]
         if opt.save_mode == 'all':
-            model_name = 'model_accu_{accu:3.3f}.chkpt'.format(accu=100*valid_accu)
             torch.save(checkpoint, os.path.join(opt.output_dir, opt.model_name))
         elif opt.save_mode == 'best':
             if valid_loss <= min(valid_losses):

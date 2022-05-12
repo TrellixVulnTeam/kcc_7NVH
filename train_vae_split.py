@@ -83,8 +83,6 @@ def train_epoch(model, training_data, optimizer, opt, epoch, device, smoothing):
 
     desc = '  - (Training)   '
     for batch in tqdm(training_data, mininterval=2, desc=desc, leave=False):
-        Before = [p for p in model.encoder.parameters()]
-        # print(Before)
         # prepare data
         src_seq = patch_src(batch.src, opt.src_pad_idx).to(device)
         trg_seq, gold = map(lambda x: x.to(device), patch_trg(batch.trg, opt.trg_pad_idx))
@@ -109,9 +107,6 @@ def train_epoch(model, training_data, optimizer, opt, epoch, device, smoothing):
                 pred, gold, opt.trg_pad_idx, mean, logv, opt.variational, epoch, smoothing=smoothing)
             loss.backward()
             optimizer.step_and_update_lr()
-        After = [p for p in model.encoder.parameters()]
-        # print("[Differ]", torch.equal(torch.Tensor(Before), torch.Tensor(After)))
-        # print(Before==After)
 
         # note keeping
         n_word_total += n_word
@@ -209,7 +204,6 @@ def train(model, training_data, validation_data, optimizer, device, opt):
         # [train_loss, train_accuracy, train_ppl, valid_loss, valid_accuracy, valid_ppl)
         best_loss = [0 for _ in range(6)]
         if opt.save_mode == 'all':
-            model_name = 'model_accu_{accu:3.3f}.chkpt'.format(accu=100*valid_accu)
             torch.save(checkpoint, os.path.join(opt.output_dir, opt.model_name))
         elif opt.save_mode == 'best':
             if valid_loss <= min(valid_losses):

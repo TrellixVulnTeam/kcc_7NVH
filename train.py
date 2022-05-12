@@ -18,15 +18,16 @@ from torchtext.data import Field, Dataset, BucketIterator
 from torchtext.datasets import TranslationDataset
 
 import transformer.Constants as Constants
-from transformer.Models import Transformer
+from transformer.Models import Transformer, VAETransformer
 from transformer.Optim import ScheduledOptim
+from loss import kl_loss
 
 __author__ = "Yu-Hsiang Huang"
 
-def cal_performance(pred, gold, trg_pad_idx, smoothing=False):
+def cal_performance(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smoothing=False):
     ''' Apply label smoothing if needed '''
 
-    loss = cal_loss(pred, gold, trg_pad_idx, smoothing=smoothing)
+    loss = cal_loss(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smoothing=smoothing)
 
     pred = pred.max(1)[1]
     gold = gold.contiguous().view(-1)
@@ -37,24 +38,31 @@ def cal_performance(pred, gold, trg_pad_idx, smoothing=False):
     return loss, n_correct, n_word
 
 
-def cal_loss(pred, gold, trg_pad_idx, smoothing=False):
+def cal_loss(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smoothing=False):
     ''' Calculate cross entropy loss, apply label smoothing if needed. '''
 
     gold = gold.contiguous().view(-1)
-
-    if smoothing:
-        eps = 0.1
-        n_class = pred.size(1)
-
-        one_hot = torch.zeros_like(pred).scatter(1, gold.view(-1, 1), 1)
-        one_hot = one_hot * (1 - eps) + (1 - one_hot) * eps / (n_class - 1)
+    if variational is True:
+        # pred torch.Size([1792, 8757])
+        # gold torch.Size([1792])
         log_prb = F.log_softmax(pred, dim=1)
-
-        non_pad_mask = gold.ne(trg_pad_idx)
-        loss = -(one_hot * log_prb).sum(dim=1)
-        loss = loss.masked_select(non_pad_mask).sum()  # average later
+        ce_loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
+        KL_loss, KL_weight = kl_loss(mean, logv, epoch, 0.0025, 2500)
+        loss = ce_loss + KL_loss*KL_weight
     else:
-        loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
+        if smoothing:
+            eps = 0.1
+            n_class = pred.size(1)
+
+            one_hot = torch.zeros_like(pred).scatter(1, gold.view(-1, 1), 1)
+            one_hot = one_hot * (1 - eps) + (1 - one_hot) * eps / (n_class - 1)
+            log_prb = F.log_softmax(pred, dim=1)
+
+            non_pad_mask = gold.ne(trg_pad_idx)
+            loss = -(one_hot * log_prb).sum(dim=1)
+            loss = loss.masked_select(non_pad_mask).sum()  # average later
+        else:
+            loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
     return loss
 
 
@@ -69,7 +77,7 @@ def patch_trg(trg, pad_idx):
     return trg, gold
 
 
-def train_epoch(model, training_data, optimizer, opt, device, smoothing):
+def train_epoch(model, training_data, optimizer, opt, epoch, device, smoothing):
     ''' Epoch operation in training phase'''
 
     model.train()
@@ -77,20 +85,30 @@ def train_epoch(model, training_data, optimizer, opt, device, smoothing):
 
     desc = '  - (Training)   '
     for batch in tqdm(training_data, mininterval=2, desc=desc, leave=False):
-
         # prepare data
         src_seq = patch_src(batch.src, opt.src_pad_idx).to(device)
         trg_seq, gold = map(lambda x: x.to(device), patch_trg(batch.trg, opt.trg_pad_idx))
 
         # forward
         optimizer.zero_grad()
-        pred = model(src_seq, trg_seq)
+        if opt.variational:
+            pred, mean, logv = model(src_seq, trg_seq)
 
-        # backward and update parameters
-        loss, n_correct, n_word = cal_performance(
-            pred, gold, opt.trg_pad_idx, smoothing=smoothing) 
-        loss.backward()
-        optimizer.step_and_update_lr()
+            # backward and update parameters
+            loss, n_correct, n_word = cal_performance(
+                pred, gold, opt.trg_pad_idx, mean, logv, opt.variational, epoch, smoothing=smoothing)
+            # print("loss", loss.shape)
+            loss.backward()
+            optimizer.step_and_update_lr()
+
+        else:
+            pred = model(src_seq, trg_seq)
+
+            # backward and update parameters
+            loss, n_correct, n_word = cal_performance(
+                pred, gold, opt.trg_pad_idx, mean, logv, opt.variational, epoch, smoothing=smoothing)
+            loss.backward()
+            optimizer.step_and_update_lr()
 
         # note keeping
         n_word_total += n_word
@@ -102,7 +120,7 @@ def train_epoch(model, training_data, optimizer, opt, device, smoothing):
     return loss_per_word, accuracy
 
 
-def eval_epoch(model, validation_data, device, opt):
+def eval_epoch(model, validation_data, epoch, device, opt):
     ''' Epoch operation in evaluation phase '''
 
     model.eval()
@@ -117,9 +135,16 @@ def eval_epoch(model, validation_data, device, opt):
             trg_seq, gold = map(lambda x: x.to(device), patch_trg(batch.trg, opt.trg_pad_idx))
 
             # forward
-            pred = model(src_seq, trg_seq)
-            loss, n_correct, n_word = cal_performance(
-                pred, gold, opt.trg_pad_idx, smoothing=False)
+            if opt.variational:
+                pred, mean, logv = model(src_seq, trg_seq)
+                loss, n_correct, n_word = cal_performance(
+                    pred, gold, opt.trg_pad_idx, opt.variational, mean, logv, epoch, smoothing=False)
+
+            else:
+                # forward
+                pred = model(src_seq, trg_seq)
+                loss, n_correct, n_word = cal_performance(
+                    pred, gold, opt.trg_pad_idx, opt.variational, mean, logv, epoch, smoothing=False)
 
             # note keeping
             n_word_total += n_word
@@ -160,36 +185,34 @@ def train(model, training_data, validation_data, optimizer, device, opt):
 
         start = time.time()
         train_loss, train_accu = train_epoch(
-            model, training_data, optimizer, opt, device, smoothing=opt.label_smoothing)
+            model, training_data, optimizer, opt, epoch_i, device, smoothing=opt.label_smoothing)
         train_ppl = math.exp(min(train_loss, 100))
         # Current learning rate
         lr = optimizer._optimizer.param_groups[0]['lr']
         print_performances('Training', train_ppl, train_accu, train_loss, start, lr)
 
         start = time.time()
-        valid_loss, valid_accu = eval_epoch(model, validation_data, device, opt)
+        valid_loss, valid_accu = eval_epoch(model, validation_data, epoch_i, device, opt)
         valid_ppl = math.exp(min(valid_loss, 100))
         print_performances('Validation', valid_ppl, valid_accu, valid_loss, start, lr)
 
         valid_losses += [valid_loss]
 
-        checkpoint = {'epoch': epoch_i, 'settings': opt, 'model': model.state_dict()}
+        checkpoint = {'epoch': epoch_i, 'settings': opt, 'model': model.state_dict(), 'encoder': model.encoder.state_dict()}
 
         # [train_loss, train_accuracy, train_ppl, valid_loss, valid_accuracy, valid_ppl)
         best_loss = [0 for _ in range(6)]
         if opt.save_mode == 'all':
-            model_name = 'model_accu_{accu:3.3f}.chkpt'.format(accu=100*valid_accu)
-            torch.save(checkpoint, model_name)
+            torch.save(checkpoint, os.path.join(opt.output_dir, opt.model_name))
         elif opt.save_mode == 'best':
-            best_loss[0] = train_loss
-            best_loss[1] = train_accu
-            best_loss[2] = train_ppl
-            best_loss[3] = valid_loss
-            best_loss[4] = valid_accu
-            best_loss[5] = valid_ppl
-            model_name = 'model.chkpt'
             if valid_loss <= min(valid_losses):
-                torch.save(checkpoint, os.path.join(opt.output_dir, model_name))
+                best_loss[0] = train_loss
+                best_loss[1] = train_accu
+                best_loss[2] = train_ppl
+                best_loss[3] = valid_loss
+                best_loss[4] = valid_accu
+                best_loss[5] = valid_ppl
+                torch.save(checkpoint, os.path.join(opt.output_dir, opt.model_name))
                 print('    - [Info] The checkpoint file has been updated.')
 
         with open(log_train_file, 'a') as log_tf, open(log_valid_file, 'a') as log_vf:
@@ -214,6 +237,8 @@ def main():
 
     parser = argparse.ArgumentParser()
 
+    parser.add_argument('-variational', action='store_true')
+
     parser.add_argument('-data_pkl', default=None)     # all-in-1 data pickle or bpe field
 
     parser.add_argument('-train_path', default=None)   # bpe encoded data
@@ -222,7 +247,9 @@ def main():
     parser.add_argument('-epoch', type=int, default=10)
     parser.add_argument('-b', '--batch_size', type=int, default=2048)
 
+    parser.add_argument('-tst_vocab_size', type=int, default=8757)
     parser.add_argument('-d_model', type=int, default=512)
+    parser.add_argument('-d_latent', type=int, default=256)
     parser.add_argument('-d_inner_hid', type=int, default=2048)
     parser.add_argument('-d_k', type=int, default=64)
     parser.add_argument('-d_v', type=int, default=64)
@@ -239,6 +266,7 @@ def main():
     parser.add_argument('-scale_emb_or_prj', type=str, default='prj')
 
     parser.add_argument('-output_dir', type=str, default=None)
+    parser.add_argument('-model_name', type=str, default=None)
     parser.add_argument('-use_tb', action='store_true')
     parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
 
@@ -284,22 +312,41 @@ def main():
 
     print(opt)
 
-    transformer = Transformer(
-        opt.src_vocab_size,
-        opt.trg_vocab_size,
-        src_pad_idx=opt.src_pad_idx,
-        trg_pad_idx=opt.trg_pad_idx,
-        trg_emb_prj_weight_sharing=opt.proj_share_weight,
-        emb_src_trg_weight_sharing=opt.embs_share_weight,
-        d_k=opt.d_k,
-        d_v=opt.d_v,
-        d_model=opt.d_model,
-        d_word_vec=opt.d_word_vec,
-        d_inner=opt.d_inner_hid,
-        n_layers=opt.n_layers,
-        n_head=opt.n_head,
-        dropout=opt.dropout,
-        scale_emb_or_prj=opt.scale_emb_or_prj).to(device)
+    if opt.variational:
+        transformer = VAETransformer(
+            opt.tst_vocab_size,
+            opt.trg_vocab_size,
+            src_pad_idx=opt.src_pad_idx,
+            trg_pad_idx=opt.trg_pad_idx,
+            trg_emb_prj_weight_sharing=opt.proj_share_weight,
+            emb_src_trg_weight_sharing=opt.embs_share_weight,
+            d_k=opt.d_k,
+            d_v=opt.d_v,
+            d_model=opt.d_model,
+            d_latent=opt.d_latent,
+            d_word_vec=opt.d_word_vec,
+            d_inner=opt.d_inner_hid,
+            n_layers=opt.n_layers,
+            n_head=opt.n_head,
+            dropout=opt.dropout,
+            scale_emb_or_prj=opt.scale_emb_or_prj).to(device)
+    else:
+        transformer = Transformer(
+            opt.src_vocab_size,
+            opt.trg_vocab_size,
+            src_pad_idx=opt.src_pad_idx,
+            trg_pad_idx=opt.trg_pad_idx,
+            trg_emb_prj_weight_sharing=opt.proj_share_weight,
+            emb_src_trg_weight_sharing=opt.embs_share_weight,
+            d_k=opt.d_k,
+            d_v=opt.d_v,
+            d_model=opt.d_model,
+            d_word_vec=opt.d_word_vec,
+            d_inner=opt.d_inner_hid,
+            n_layers=opt.n_layers,
+            n_head=opt.n_head,
+            dropout=opt.dropout,
+            scale_emb_or_prj=opt.scale_emb_or_prj).to(device)
 
     optimizer = ScheduledOptim(
         optim.Adam(transformer.parameters(), betas=(0.9, 0.98), eps=1e-09),
