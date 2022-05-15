@@ -39,23 +39,43 @@ def cal_loss(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smoothing=
     ''' Calculate cross entropy loss, apply label smoothing if needed. '''
 
     gold = gold.contiguous().view(-1)
-    if variational is True:
+    # variational First
+    # if variational is True:
+    #     # ce_loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
+    #     loss = kl_loss(pred, gold, mean, logv, trg_pad_idx)
+    # else:
+    #     if smoothing:
+    #         eps = 0.1
+    #         n_class = pred.size(1)
+    #
+    #         one_hot = torch.zeros_like(pred).scatter(1, gold.view(-1, 1), 1)
+    #         one_hot = one_hot * (1 - eps) + (1 - one_hot) * eps / (n_class - 1)
+    #         log_prb = F.log_softmax(pred, dim=1)
+    #
+    #         non_pad_mask = gold.ne(trg_pad_idx)
+    #         loss = -(one_hot * log_prb).sum(dim=1)
+    #         loss = loss.masked_select(non_pad_mask).sum()  # average later
+    #     else:
+    #         loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
+    # only label smoothing
+    # if variational is True:
         # ce_loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
-        loss = kl_loss(pred, gold, mean, logv, trg_pad_idx)
+    #     loss = kl_loss(pred, gold, mean, logv, trg_pad_idx)
+    # else:
+    if smoothing:
+        eps = 0.1
+        n_class = pred.size(1)
+
+        one_hot = torch.zeros_like(pred).scatter(1, gold.view(-1, 1), 1)
+        one_hot = one_hot * (1 - eps) + (1 - one_hot) * eps / (n_class - 1)
+        log_prb = F.log_softmax(pred, dim=1)
+
+        non_pad_mask = gold.ne(trg_pad_idx)
+        loss = -(one_hot * log_prb).sum(dim=1)
+        loss = loss.masked_select(non_pad_mask).sum()  # average later
     else:
-        if smoothing:
-            eps = 0.1
-            n_class = pred.size(1)
+        loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
 
-            one_hot = torch.zeros_like(pred).scatter(1, gold.view(-1, 1), 1)
-            one_hot = one_hot * (1 - eps) + (1 - one_hot) * eps / (n_class - 1)
-            log_prb = F.log_softmax(pred, dim=1)
-
-            non_pad_mask = gold.ne(trg_pad_idx)
-            loss = -(one_hot * log_prb).sum(dim=1)
-            loss = loss.masked_select(non_pad_mask).sum()  # average later
-        else:
-            loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
     return loss
 
 
