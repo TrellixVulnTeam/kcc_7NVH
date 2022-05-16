@@ -253,6 +253,7 @@ def main_wo_bpe():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-tokenizer', required=True, choices=['spacy', 'spm'])
+    parser.add_argument('-tk_type', required=True, choices=['unigram', 'bpe'])
     parser.add_argument('-lang_src', choices=spacy_support_langs)
     parser.add_argument('-lang_trg', choices=spacy_support_langs)
     parser.add_argument('-save_data', required=True)
@@ -290,8 +291,12 @@ def main_wo_bpe():
         trg_sp = spm.SentencePieceProcessor()
         spm_dir = "data/tokenizer"
 
-        src_sp.Load(os.path.join(spm_dir, "train_em_informal_spm.model"))
-        trg_sp.Load(os.path.join(spm_dir, "train_em_formal_spm.model"))
+        if opt.tk_type == 'unigram':
+            src_sp.Load(os.path.join(spm_dir, "train_em_informal_spm.model"))
+            trg_sp.Load(os.path.join(spm_dir, "train_em_formal_spm.model"))
+        elif opt.tk_type == 'bpe':
+            src_sp.Load(os.path.join(spm_dir, "bpe", "train_em_informal_spm_bpe.model"))
+            trg_sp.Load(os.path.join(spm_dir, "bpe", "train_em_formal_spm_bpe.model"))
 
         src_sp.SetEncodeExtraOptions('bos:eos')
         trg_sp.SetEncodeExtraOptions('bos:eos')
