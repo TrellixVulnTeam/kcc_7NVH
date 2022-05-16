@@ -8,6 +8,8 @@ from tqdm import tqdm
 import sys
 import codecs
 import spacy
+import tokenizers
+import sentencepiece as spm
 
 import torch
 import tarfile
@@ -250,8 +252,9 @@ def main_wo_bpe():
     spacy_support_langs = ['de_core_news_sm', 'el', 'en_core_web_sm', 'es', 'fr', 'it', 'lt', 'nb', 'nl', 'pt']
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-lang_src', required=True, choices=spacy_support_langs)
-    parser.add_argument('-lang_trg', required=True, choices=spacy_support_langs)
+    parser.add_argument('-tokenizer', required=True, choices=['spacy', 'spm'])
+    parser.add_argument('-lang_src', choices=spacy_support_langs)
+    parser.add_argument('-lang_trg', choices=spacy_support_langs)
     parser.add_argument('-save_data', required=True)
     parser.add_argument('-data_type', type=str, default=None, choices=["gyafc", "korpora"])
     parser.add_argument('-data_dir', type=str, default=None, choices=[".data/gyafc", ".data/korpora"])
@@ -271,14 +274,33 @@ def main_wo_bpe():
     # assert not any([opt.data_src, opt.data_trg]) or all([opt.data_src, opt.data_trg])
     print(opt)
 
-    src_lang_model = spacy.load(opt.lang_src)
-    trg_lang_model = spacy.load(opt.lang_trg)
 
-    def tokenize_src(text):
-        return [tok.text for tok in src_lang_model.tokenizer(text)]
+    if opt.tokenizer == "spacy":
+        src_lang_model = spacy.load(opt.lang_src)
+        trg_lang_model = spacy.load(opt.lang_trg)
 
-    def tokenize_trg(text):
-        return [tok.text for tok in trg_lang_model.tokenizer(text)]
+        def tokenize_src(text):
+            return [tok.text for tok in src_lang_model.tokenizer(text)]
+
+        def tokenize_trg(text):
+            return [tok.text for tok in trg_lang_model.tokenizer(text)]
+
+    elif opt.tokenizer == "spm":
+        src_sp = spm.SentencePieceProcessor()
+        trg_sp = spm.SentencePieceProcessor()
+        spm_dir = "data/tokenizer"
+
+        src_sp.Load(os.path.join(spm_dir, "train_em_informal_spm.model"))
+        trg_sp.Load(os.path.join(spm_dir, "train_em_formal_spm.model"))
+
+        src_sp.SetEncodeExtraOptions('bos:eos')
+        trg_sp.SetEncodeExtraOptions('bos:eos')
+
+        def tokenize_src(text):
+            return [tok for tok in src_sp.EncodeAsPieces(text)]
+
+        def tokenize_trg(text):
+            return [tok for tok in trg_sp.EncodeAsPieces(text)]
 
     SRC = torchtext.data.Field(
         tokenize=tokenize_src, lower=not opt.keep_case,
