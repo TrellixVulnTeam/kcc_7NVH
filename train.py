@@ -22,7 +22,6 @@ from transformer.Models import Transformer, VAETransformer
 from transformer.Optim import ScheduledOptim
 from loss import kl_loss
 
-__author__ = "Yu-Hsiang Huang"
 
 def cal_performance(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smoothing=False):
     ''' Apply label smoothing if needed '''
@@ -38,31 +37,24 @@ def cal_performance(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smo
     return loss, n_correct, n_word
 
 
-def cal_loss(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smoothing=False):
+def cal_loss(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smoothing):
     ''' Calculate cross entropy loss, apply label smoothing if needed. '''
 
     gold = gold.contiguous().view(-1)
-    if variational is True:
-        # pred torch.Size([1792, 8757])
-        # gold torch.Size([1792])
+
+    if smoothing:
+        eps = 0.1
+        n_class = pred.size(1)
+
+        one_hot = torch.zeros_like(pred).scatter(1, gold.view(-1, 1), 1)
+        one_hot = one_hot * (1 - eps) + (1 - one_hot) * eps / (n_class - 1)
         log_prb = F.log_softmax(pred, dim=1)
-        ce_loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
-        KL_loss, KL_weight = kl_loss(mean, logv, epoch, 0.0025, 2500)
-        loss = ce_loss + KL_loss*KL_weight
+
+        non_pad_mask = gold.ne(trg_pad_idx)
+        loss = -(one_hot * log_prb).sum(dim=1)
+        loss = loss.masked_select(non_pad_mask).sum()  # average later
     else:
-        if smoothing:
-            eps = 0.1
-            n_class = pred.size(1)
-
-            one_hot = torch.zeros_like(pred).scatter(1, gold.view(-1, 1), 1)
-            one_hot = one_hot * (1 - eps) + (1 - one_hot) * eps / (n_class - 1)
-            log_prb = F.log_softmax(pred, dim=1)
-
-            non_pad_mask = gold.ne(trg_pad_idx)
-            loss = -(one_hot * log_prb).sum(dim=1)
-            loss = loss.masked_select(non_pad_mask).sum()  # average later
-        else:
-            loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
+        loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
     return loss
 
 
@@ -167,8 +159,9 @@ def train(model, training_data, validation_data, optimizer, device, opt):
         from torch.utils.tensorboard import SummaryWriter
         tb_writer = SummaryWriter(log_dir=os.path.join(opt.output_dir, 'tensorboard'))
 
-    log_train_file = os.path.join(opt.output_dir, 'train.log')
-    log_valid_file = os.path.join(opt.output_dir, 'valid.log')
+    model_prefix = (opt.model_name).split('.')[0]
+    log_train_file = os.path.join(opt.output_dir, f'{model_prefix}_train.log')
+    log_valid_file = os.path.join(opt.output_dir, f'{model_prefix}_valid.log')
 
     print('[Info] Training performance will be written to file: {} and {}'.format(
         log_train_file, log_valid_file))
@@ -249,7 +242,7 @@ def main():
     parser.add_argument('-epoch', type=int, default=10)
     parser.add_argument('-b', '--batch_size', type=int, default=2048)
 
-    parser.add_argument('-tst_vocab_size', type=int, default=8757)
+    # parser.add_argument('-tst_vocab_size', type=int, default=8757)
     parser.add_argument('-d_model', type=int, default=512)
     parser.add_argument('-d_latent', type=int, default=256)
     parser.add_argument('-d_inner_hid', type=int, default=2048)
@@ -316,7 +309,7 @@ def main():
 
     if opt.variational:
         transformer = VAETransformer(
-            opt.tst_vocab_size,
+            opt.src_vocab_size,
             opt.trg_vocab_size,
             src_pad_idx=opt.src_pad_idx,
             trg_pad_idx=opt.trg_pad_idx,

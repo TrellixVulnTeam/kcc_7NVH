@@ -13,13 +13,13 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchtext.data import Field, Dataset, BucketIterator
 from torchtext.datasets import TranslationDataset
+from transformers import get_scheduler
 
 import transformer.Constants as Constants
 from transformer.TM_Models import Transformer, VAETransformer, Encoder
 from transformer.Optim import ScheduledOptim
 from loss import kl_loss
 
-__author__ = "Yu-Hsiang Huang"
 
 
 def cal_performance(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smoothing=False):
@@ -40,27 +40,7 @@ def cal_loss(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smoothing=
     ''' Calculate cross entropy loss, apply label smoothing if needed. '''
 
     gold = gold.contiguous().view(-1)
-    # if variational is True:
-    #     # pred torch.Size([1792, 8757])
-    #     # gold torch.Size([1792])
-    #     log_prb = F.log_softmax(pred, dim=1)
-    #     ce_loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
-    #     KL_loss, KL_weight = kl_loss(mean, logv, epoch, 0.0025, 2500)
-    #     loss = ce_loss + KL_loss*KL_weight
-    # else:
-    #     if smoothing:
-    #         eps = 0.1
-    #         n_class = pred.size(1)
-    #
-    #         one_hot = torch.zeros_like(pred).scatter(1, gold.view(-1, 1), 1)
-    #         one_hot = one_hot * (1 - eps) + (1 - one_hot) * eps / (n_class - 1)
-    #         log_prb = F.log_softmax(pred, dim=1)
-    #
-    #         non_pad_mask = gold.ne(trg_pad_idx)
-    #         loss = -(one_hot * log_prb).sum(dim=1)
-    #         loss = loss.masked_select(non_pad_mask).sum()  # average later
-    #     else:
-    #         loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
+
     if smoothing:
         eps = 0.1
         n_class = pred.size(1)
@@ -70,11 +50,17 @@ def cal_loss(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smoothing=
         log_prb = F.log_softmax(pred, dim=1)
 
         non_pad_mask = gold.ne(trg_pad_idx)
-        loss = -(one_hot * log_prb).sum(dim=1)
-        loss = loss.masked_select(non_pad_mask).sum()  # average later
+        smoothing_loss = -(one_hot * log_prb).sum(dim=1)
+        smoothing_loss = smoothing_loss.masked_select(non_pad_mask).sum()  # average later
+        if variational is True:
+            # ce_loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
+            KL_loss = kl_loss(pred, gold, mean, logv, trg_pad_idx)
+            return smoothing_loss + KL_loss
+        return smoothing_loss
+
     else:
-        loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')train_
-    return loss
+        loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
+        return loss
 
 
 
@@ -89,7 +75,7 @@ def patch_trg(trg, pad_idx):
     return trg, gold
 
 
-def train_epoch(model, training_data, optimizer, opt, epoch, device, smoothing):
+def train_epoch(model, training_data, optimizer, lr_scheduler, opt, epoch, device, smoothing):
     ''' Epoch operation in training phase'''
 
     model.train()
@@ -97,7 +83,7 @@ def train_epoch(model, training_data, optimizer, opt, epoch, device, smoothing):
 
     desc = '  - (Training)   '
     for batch in tqdm(training_data, mininterval=2, desc=desc, leave=False):
-        Before = [p for p in model.encoder.parameters()]
+        # Before = [p for p in model.encoder.parameters()]
         # print(Before)
         # prepare data
         src_seq = patch_src(batch.src, opt.src_pad_idx).to(device)
@@ -113,17 +99,20 @@ def train_epoch(model, training_data, optimizer, opt, epoch, device, smoothing):
                 pred, gold, opt.trg_pad_idx, mean, logv, opt.variational, epoch, smoothing=smoothing)
             # print("loss", loss.shape)
             loss.backward()
-            optimizer.step_and_update_lr()
+            optimizer.step()
+            lr_scheduler.step()
 
         else:
+            mean = logv = 0
             pred = model(src_seq, trg_seq)
 
             # backward and update parameters
             loss, n_correct, n_word = cal_performance(
                 pred, gold, opt.trg_pad_idx, mean, logv, opt.variational, epoch, smoothing=smoothing)
             loss.backward()
-            optimizer.step_and_update_lr()
-        After = [p for p in model.encoder.parameters()]
+            optimizer.step()
+            lr_scheduler.step()
+        # After = [p for p in model.encoder.parameters()]
         # print("[Differ]", torch.equal(torch.Tensor(Before), torch.Tensor(After)))
         # print(Before==After)
 
@@ -158,6 +147,7 @@ def eval_epoch(model, validation_data, epoch, device, opt):
                     pred, gold, opt.trg_pad_idx, opt.variational, mean, logv, epoch, smoothing=False)
 
             else:
+                mean = logv = 0
                 # forward
                 pred = model(src_seq, trg_seq)
                 loss, n_correct, n_word = cal_performance(
@@ -173,7 +163,7 @@ def eval_epoch(model, validation_data, epoch, device, opt):
     return loss_per_word, accuracy
 
 
-def train(model, training_data, validation_data, optimizer, device, opt):
+def train(model, training_data, validation_data, optimizer, lr_scheduler, device, opt):
     ''' Start training '''
 
     # Use tensorboard to plot curves, e.g. perplexity, accuracy, learning rate
@@ -182,8 +172,9 @@ def train(model, training_data, validation_data, optimizer, device, opt):
         from torch.utils.tensorboard import SummaryWriter
         tb_writer = SummaryWriter(log_dir=os.path.join(opt.output_dir, 'tensorboard'))
 
-    log_train_file = os.path.join(opt.output_dir, 'train.log')
-    log_valid_file = os.path.join(opt.output_dir, 'valid.log')
+    model_prefix = (opt.model_name).split('.')[0]
+    log_train_file = os.path.join(opt.output_dir, f'{model_prefix}_train.log')
+    log_valid_file = os.path.join(opt.output_dir, f'{model_prefix}_valid.log')
 
     print('[Info] Training performance will be written to file: {} and {}'.format(
         log_train_file, log_valid_file))
@@ -198,14 +189,17 @@ def train(model, training_data, validation_data, optimizer, device, opt):
     #valid_accus = []
     valid_losses = []
     for epoch_i in range(opt.epoch):
-        print('[ Epoch', epoch_i, ']')
+        if opt.variational:
+            print('[ VAE Epoch', epoch_i, ']')
+        else:
+            print('[ Epoch', epoch_i, ']')
 
         start = time.time()
         train_loss, train_accu = train_epoch(
-            model, training_data, optimizer, opt, epoch_i, device, smoothing=opt.label_smoothing)
+            model, training_data, optimizer, lr_scheduler, opt, epoch_i, device, smoothing=opt.label_smoothing)
         train_ppl = math.exp(min(train_loss, 100))
         # Current learning rate
-        lr = optimizer._optimizer.param_groups[0]['lr']
+        lr = optimizer.param_groups[0]['lr']
         print_performances('Training', train_ppl, train_accu, train_loss, start, lr)
 
         start = time.time()
@@ -265,7 +259,7 @@ def main():
     parser.add_argument('-epoch', type=int, default=10)
     parser.add_argument('-b', '--batch_size', type=int, default=2048)
 
-    parser.add_argument('-tst_vocab_size', type=int, default=8757)
+    # parser.add_argument('-tst_vocab_size', type=int, default=8757)
     parser.add_argument('-d_model', type=int, default=512)
     parser.add_argument('-d_latent', type=int, default=256)
     parser.add_argument('-d_inner_hid', type=int, default=2048)
@@ -274,6 +268,7 @@ def main():
 
     parser.add_argument('-n_head', type=int, default=8)
     parser.add_argument('-n_layers', type=int, default=6)
+    parser.add_argument('-learning_rate', default=1e-4, type=float, help="learning rate")
     parser.add_argument('-warmup','--n_warmup_steps', type=int, default=4000)
     parser.add_argument('-lr_mul', type=float, default=2.0)
     parser.add_argument('-seed', type=int, default=None)
@@ -354,7 +349,6 @@ def main():
     if opt.variational:
         transformer = VAETransformer(
             encoder,
-            opt.tst_vocab_size,
             opt.trg_vocab_size,
             src_pad_idx=opt.src_pad_idx,
             trg_pad_idx=opt.trg_pad_idx,
@@ -393,9 +387,21 @@ def main():
             scale_emb_or_prj=opt.scale_emb_or_prj).to(device)
         # transformer = nn.DataParallel(transformer).to(device)
 
-    optimizer = ScheduledOptim(
-        optim.Adam(transformer.parameters(), betas=(0.9, 0.98), eps=1e-09),
-        opt.lr_mul, opt.d_model, opt.n_warmup_steps)
+    # optimizer = ScheduledOptim(
+    #     optim.Adam(transformer.parameters(), betas=(0.9, 0.98), eps=1e-09),
+    #     opt.lr_mul, opt.d_model, opt.n_warmup_steps)
+
+    learning_rate = 0.0001
+    optimizer = optim.Adam(transformer.parameters(), lr=learning_rate)
+
+    lr_scheduler = get_scheduler(
+        "linear",
+        optimizer=optimizer,
+        num_warmup_steps=opt.n_warmup_steps,
+        num_training_steps=opt.epoch * len(training_data)
+    )
+
+    train(transformer, training_data, validation_data, optimizer, lr_scheduler, device, opt)
 
     train(transformer, training_data, validation_data, optimizer, device, opt)
 
