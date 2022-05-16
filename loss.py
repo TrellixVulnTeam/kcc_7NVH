@@ -19,6 +19,7 @@ def bce_loss(out, target):
 #     return KL_loss, KL_weight
 
 def kl_loss(out, target, mean, logv, trg_pad_idx):
+    # mean, logv; [batch, seq_len, latent_size]
     # reproduction_loss = F.cross_entropy(out, target, ignore_index=trg_pad_idx)
     KLD = -0.5 * torch.sum(1 + logv - mean.pow(2) - logv.exp())
     return  KLD
