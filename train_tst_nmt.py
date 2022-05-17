@@ -270,7 +270,7 @@ def main():
     parser.add_argument('-n_layers', type=int, default=6)
     parser.add_argument('-learning_rate', default=1e-4, type=float, help="learning rate")
     parser.add_argument('-warmup','--n_warmup_steps', type=int, default=4000)
-    parser.add_argument('-max_seq_len', type=int, default=300)
+    parser.add_argument('-max_seq_len', type=int, default=100)
     parser.add_argument('-lr_mul', type=float, default=2.0)
     parser.add_argument('-seed', type=int, default=None)
 
