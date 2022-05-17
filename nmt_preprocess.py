@@ -257,8 +257,8 @@ def main_wo_bpe():
     parser.add_argument('-tk_type', required=True, choices=['unigram', 'bpe'])
     parser.add_argument('-lang_src', choices=spacy_support_langs)
     parser.add_argument('-save_data', required=True)
-    parser.add_argument('-data_type', type=str, default=None, choices=["gyafc", "korpora"])
-    parser.add_argument('-data_dir', type=str, default=None, choices=[".data/gyafc", ".data/korpora"])
+    parser.add_argument('-data_type', type=str, default=None, choices=["gyafc", "korpora", "aihub"])
+    parser.add_argument('-data_dir', type=str, default=None, choices=[".data/gyafc", ".data/korpora", ".data/aihub"])
     parser.add_argument('-train_path', type=str, default="train.csv")
     parser.add_argument('-valid_path', type=str, default="valid.csv")
     parser.add_argument('-test_path', type=str, default="test.csv")
@@ -287,24 +287,45 @@ def main_wo_bpe():
             return [tok for tok in trg_lang_model.morphs(text)]
 
     elif opt.tokenizer == "spm":
-        src_sp = spm.SentencePieceProcessor()
-        trg_sp = spm.SentencePieceProcessor()
-        spm_dir = "data/tokenizer"
-        if opt.tk_type == 'unigram':
-            src_sp.Load(os.path.join(spm_dir, "train_pair_eng_spm.model"))
-            trg_sp.Load(os.path.join(spm_dir, "train_pair_kor_spm.model"))
-        elif opt.tk_type == 'bpe':
-            src_sp.Load(os.path.join(spm_dir, "bpe", "train_pair_eng_spm_bpe.model"))
-            trg_sp.Load(os.path.join(spm_dir, "bpe", "train_pair_kor_spm_bpe.model"))
+        if opt.data_type == "korpora":
+            src_sp = spm.SentencePieceProcessor()
+            trg_sp = spm.SentencePieceProcessor()
+            spm_dir = "data/tokenizer"
+            if opt.tk_type == 'unigram':
+                src_sp.Load(os.path.join(spm_dir, "train_pair_eng_spm.model"))
+                trg_sp.Load(os.path.join(spm_dir, "train_pair_kor_spm.model"))
+            elif opt.tk_type == 'bpe':
+                src_sp.Load(os.path.join(spm_dir, "bpe", "train_pair_eng_spm_bpe.model"))
+                trg_sp.Load(os.path.join(spm_dir, "bpe", "train_pair_kor_spm_bpe.model"))
 
-        src_sp.SetEncodeExtraOptions('bos:eos')
-        trg_sp.SetEncodeExtraOptions('bos:eos')
+            src_sp.SetEncodeExtraOptions('bos:eos')
+            trg_sp.SetEncodeExtraOptions('bos:eos')
 
-        def tokenize_src(text):
-            return [tok for tok in src_sp.EncodeAsPieces(text)]
+            def tokenize_src(text):
+                return [tok for tok in src_sp.EncodeAsPieces(text)]
 
-        def tokenize_trg(text):
-            return [tok for tok in trg_sp.EncodeAsPieces(text)]
+            def tokenize_trg(text):
+                return [tok for tok in trg_sp.EncodeAsPieces(text)]
+
+        elif opt.data_type == "aihub":
+            src_sp = spm.SentencePieceProcessor()
+            trg_sp = spm.SentencePieceProcessor()
+            spm_dir = "data/tokenizer"
+            if opt.tk_type == 'unigram':
+                src_sp.Load(os.path.join(spm_dir, "train_total_eng_spm.model"))
+                trg_sp.Load(os.path.join(spm_dir, "train_total_kor_spm.model"))
+            elif opt.tk_type == 'bpe':
+                src_sp.Load(os.path.join(spm_dir, "bpe", "train_total_eng_spm_bpe.model"))
+                trg_sp.Load(os.path.join(spm_dir, "bpe", "train_total_kor_spm_bpe.model"))
+
+            src_sp.SetEncodeExtraOptions('bos:eos')
+            trg_sp.SetEncodeExtraOptions('bos:eos')
+
+            def tokenize_src(text):
+                return [tok for tok in src_sp.EncodeAsPieces(text)]
+
+            def tokenize_trg(text):
+                return [tok for tok in trg_sp.EncodeAsPieces(text)]
 
     SRC = torchtext.data.Field(
         tokenize=tokenize_src, lower=not opt.keep_case,

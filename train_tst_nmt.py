@@ -16,7 +16,7 @@ from torchtext.datasets import TranslationDataset
 from transformers import get_scheduler
 
 import transformer.Constants as Constants
-from transformer.TM_Models import Transformer, VAETransformer, Encoder
+from transformer.TM_Models import Transformer, VAETransformer, NMTEncoder, Encoder
 from transformer.Optim import ScheduledOptim
 from loss import kl_loss
 
@@ -252,14 +252,14 @@ def main():
     parser.add_argument('-variational', action='store_true')
 
     parser.add_argument('-data_pkl', default=None)     # all-in-1 data pickle or bpe field
-
+    parser.add_argument('-tst_data_pkl', default=None)
     parser.add_argument('-train_path', default=None)   # bpe encoded data
     parser.add_argument('-val_path', default=None)     # bpe encoded data
 
     parser.add_argument('-epoch', type=int, default=10)
     parser.add_argument('-b', '--batch_size', type=int, default=2048)
 
-    # parser.add_argument('-tst_vocab_size', type=int, default=8757)
+    parser.add_argument('-tst_vocab_size', type=int, default=3822)
     parser.add_argument('-d_model', type=int, default=512)
     parser.add_argument('-d_latent', type=int, default=256)
     parser.add_argument('-d_inner_hid', type=int, default=2048)
@@ -331,13 +331,27 @@ def main():
 
 
 
-    encoder = Encoder(
+    tst_encoder = Encoder(
         n_src_vocab=opt.tst_vocab_size, n_position=200,
         d_word_vec=opt.d_word_vec, d_model=opt.d_model, d_inner=opt.d_inner_hid,
         n_layers=opt.n_layers, n_head=opt.n_head, d_k=opt.d_k, d_v=opt.d_v,
         pad_idx=opt.src_pad_idx, dropout=opt.dropout, scale_emb=scale_emb)
 
-    encoder.load_state_dict(torch.load("output/vae/tst_temp/model.chkpt")['encoder'])
+    nmt_encoder = NMTEncoder(
+        n_src_vocab=opt.src_vocab_size, n_position=200,
+        d_word_vec=opt.d_word_vec, d_model=opt.d_model, d_inner=opt.d_inner_hid,
+        n_layers=opt.n_layers, n_head=opt.n_head, d_k=opt.d_k, d_v=opt.d_v,
+        pad_idx=opt.src_pad_idx, dropout=opt.dropout, scale_emb=scale_emb)
+
+
+    tst_encoder.load_state_dict(torch.load("output/vae/new_tst/spm_bpe_tst.chkpt")['encoder'])
+    tst_encoder_dict = tst_encoder.state_dict()
+    nmt_encoder_dict = nmt_encoder.state_dict()
+    tst_encoder_dict = {k: v for k, v in tst_encoder_dict.items() if k in nmt_encoder_dict}
+    nmt_encoder_dict.update(tst_encoder_dict)
+    nmt_encoder.load_state_dict(tst_encoder_dict)
+    # print(nmt_encoder_dict.keys())
+    # encoder = encoder.to(device)
 
     # state_dict = encoder.state_dict()
     # for name in encoder.state_dict():
@@ -348,7 +362,8 @@ def main():
 
     if opt.variational:
         transformer = VAETransformer(
-            encoder,
+            nmt_encoder,
+            opt.src_vocab_size,
             opt.trg_vocab_size,
             src_pad_idx=opt.src_pad_idx,
             trg_pad_idx=opt.trg_pad_idx,
@@ -443,8 +458,12 @@ def prepare_dataloaders_from_bpe_files(opt, device):
 def prepare_dataloaders(opt, device):
     batch_size = opt.batch_size
     data = pickle.load(open(opt.data_pkl, 'rb'))
+    # tst_data = pickle.load(open(opt.tst_data_pkl, 'rb'))
 
-    opt.max_token_seq_len = data['settings'].max_len
+    opt.max_token_seq_len = len(data['train'])
+    print(opt.max_token_seq_len)
+    print(len(data['test']))
+    print( len(data['valid']))
     opt.src_pad_idx = data['vocab']['src'].vocab.stoi[Constants.PAD_WORD]
     opt.trg_pad_idx = data['vocab']['trg'].vocab.stoi[Constants.PAD_WORD]
 
