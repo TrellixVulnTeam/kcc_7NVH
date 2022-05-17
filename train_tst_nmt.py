@@ -52,10 +52,10 @@ def cal_loss(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smoothing=
         non_pad_mask = gold.ne(trg_pad_idx)
         smoothing_loss = -(one_hot * log_prb).sum(dim=1)
         smoothing_loss = smoothing_loss.masked_select(non_pad_mask).sum()  # average later
-        if variational is True:
-            # ce_loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
-            KL_loss = kl_loss(pred, gold, mean, logv, trg_pad_idx)
-            return smoothing_loss + KL_loss
+        # if variational is True:
+        #     # ce_loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
+        #     KL_loss = kl_loss(pred, gold, mean, logv, trg_pad_idx)
+        #     return smoothing_loss + KL_loss
         return smoothing_loss
 
     else:
