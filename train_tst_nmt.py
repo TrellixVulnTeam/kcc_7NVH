@@ -406,7 +406,7 @@ def main():
     #     optim.Adam(transformer.parameters(), betas=(0.9, 0.98), eps=1e-09),
     #     opt.lr_mul, opt.d_model, opt.n_warmup_steps)
 
-    learning_rate = 0.0001
+    learning_rate = opt.learning_rate
     optimizer = optim.Adam(transformer.parameters(), lr=learning_rate)
 
     lr_scheduler = get_scheduler(
@@ -417,8 +417,6 @@ def main():
     )
 
     train(transformer, training_data, validation_data, optimizer, lr_scheduler, device, opt)
-
-    train(transformer, training_data, validation_data, optimizer, device, opt)
 
 
 def prepare_dataloaders_from_bpe_files(opt, device):
@@ -461,9 +459,6 @@ def prepare_dataloaders(opt, device):
     # tst_data = pickle.load(open(opt.tst_data_pkl, 'rb'))
 
     opt.max_token_seq_len = len(data['train'])
-    print(opt.max_token_seq_len)
-    print(len(data['test']))
-    print( len(data['valid']))
     opt.src_pad_idx = data['vocab']['src'].vocab.stoi[Constants.PAD_WORD]
     opt.trg_pad_idx = data['vocab']['trg'].vocab.stoi[Constants.PAD_WORD]
 
