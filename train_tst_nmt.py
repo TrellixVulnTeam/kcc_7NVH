@@ -270,6 +270,7 @@ def main():
     parser.add_argument('-n_layers', type=int, default=6)
     parser.add_argument('-learning_rate', default=1e-4, type=float, help="learning rate")
     parser.add_argument('-warmup','--n_warmup_steps', type=int, default=4000)
+    parser.add_argument('-max_seq_len', type=int, default=300)
     parser.add_argument('-lr_mul', type=float, default=2.0)
     parser.add_argument('-seed', type=int, default=None)
 
@@ -458,7 +459,7 @@ def prepare_dataloaders(opt, device):
     data = pickle.load(open(opt.data_pkl, 'rb'))
     # tst_data = pickle.load(open(opt.tst_data_pkl, 'rb'))
 
-    opt.max_token_seq_len = len(data['train'])
+    opt.max_token_seq_len = opt.max_seq_len
     opt.src_pad_idx = data['vocab']['src'].vocab.stoi[Constants.PAD_WORD]
     opt.trg_pad_idx = data['vocab']['trg'].vocab.stoi[Constants.PAD_WORD]
 
