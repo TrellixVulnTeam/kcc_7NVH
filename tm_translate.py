@@ -136,7 +136,9 @@ def main():
     opt.cuda = not opt.no_cuda
 
     data = pickle.load(open(opt.data_pkl, 'rb'))
-    SRC, TRG = data['vocab']['src'], data['vocab']['trg']
+    tst_data = pickle.load(open(".data/pkl/gyafc_spm_bpe.pkl", "rb"))
+    SRC = tst_data['vocab']['src']
+    TRG = data['vocab']['trg']
     # print("SRC", )
     opt.src_pad_idx = SRC.vocab.stoi[Constants.PAD_WORD]
     opt.trg_pad_idx = TRG.vocab.stoi[Constants.PAD_WORD]
