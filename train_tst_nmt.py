@@ -252,7 +252,7 @@ def main():
     parser.add_argument('-variational', action='store_true')
 
     parser.add_argument('-data_pkl', default=None)     # all-in-1 data pickle or bpe field
-    parser.add_argument('-tst_data_pkl', default=None)
+    parser.add_argument('-tst_model', default="output/vae/new_tst/spm_bpe_tst.chkpt")
     parser.add_argument('-train_path', default=None)   # bpe encoded data
     parser.add_argument('-val_path', default=None)     # bpe encoded data
 
@@ -345,7 +345,7 @@ def main():
         pad_idx=opt.src_pad_idx, dropout=opt.dropout, scale_emb=scale_emb)
 
 
-    tst_encoder.load_state_dict(torch.load("output/vae/new_tst/spm_bpe_tst.chkpt")['encoder'])
+    tst_encoder.load_state_dict(torch.load(opt.tst_model)['encoder'])
     tst_encoder_dict = tst_encoder.state_dict()
     nmt_encoder_dict = nmt_encoder.state_dict()
     tst_encoder_dict = {k: v for k, v in tst_encoder_dict.items() if k in nmt_encoder_dict}

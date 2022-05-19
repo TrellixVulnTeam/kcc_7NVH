@@ -257,7 +257,7 @@ def main_wo_bpe():
     parser.add_argument('-tk_type', required=True, choices=['unigram', 'bpe'])
     parser.add_argument('-lang_src', choices=spacy_support_langs)
     parser.add_argument('-save_data', required=True)
-    parser.add_argument('-data_type', type=str, default=None, choices=["gyafc", "korpora", "aihub"])
+    parser.add_argument('-data_type', type=str, default=None, choices=["gyafc", "korpora", "aihub", "aihub_mecab"])
     parser.add_argument('-data_dir', type=str, default=None, choices=[".data/gyafc", ".data/korpora", ".data/aihub"])
     parser.add_argument('-train_path', type=str, default="train.csv")
     parser.add_argument('-valid_path', type=str, default="valid.csv")
@@ -326,6 +326,25 @@ def main_wo_bpe():
 
             def tokenize_trg(text):
                 return [tok for tok in trg_sp.EncodeAsPieces(text)]
+
+        elif opt.data_type == "aihub_mecab":
+            src_sp = spm.SentencePieceProcessor()
+            trg_lang_model = Mecab()
+            spm_dir = "data/tokenizer"
+            if opt.tk_type == 'unigram':
+                src_sp.Load(os.path.join(spm_dir, "train_total_eng_spm.model"))
+
+            elif opt.tk_type == 'bpe':
+                src_sp.Load(os.path.join(spm_dir, "bpe", "train_total_eng_spm_bpe.model"))
+
+            src_sp.SetEncodeExtraOptions('bos:eos')
+
+
+            def tokenize_src(text):
+                return [tok for tok in src_sp.EncodeAsPieces(text)]
+
+            def tokenize_trg(text):
+                return [tok for tok in trg_lang_model.morphs(text)]
 
     SRC = torchtext.data.Field(
         tokenize=tokenize_src, lower=not opt.keep_case,
