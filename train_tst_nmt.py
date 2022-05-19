@@ -52,10 +52,10 @@ def cal_loss(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smoothing=
         non_pad_mask = gold.ne(trg_pad_idx)
         smoothing_loss = -(one_hot * log_prb).sum(dim=1)
         smoothing_loss = smoothing_loss.masked_select(non_pad_mask).sum()  # average later
-        # if variational is True:
-        #     # ce_loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
-        #     KL_loss = kl_loss(pred, gold, mean, logv, trg_pad_idx)
-        #     return smoothing_loss + KL_loss
+        if variational is True:
+            # ce_loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
+            KL_loss = kl_loss(pred, gold, mean, logv, trg_pad_idx)
+            return smoothing_loss + KL_loss
         return smoothing_loss
 
     else:
@@ -252,7 +252,7 @@ def main():
     parser.add_argument('-variational', action='store_true')
 
     parser.add_argument('-data_pkl', default=None)     # all-in-1 data pickle or bpe field
-    parser.add_argument('-tst_model', default="output/vae/new_tst/spm_bpe_tst.chkpt")
+    parser.add_argument('-tst_data_pkl', default=None)
     parser.add_argument('-train_path', default=None)   # bpe encoded data
     parser.add_argument('-val_path', default=None)     # bpe encoded data
 
@@ -270,7 +270,6 @@ def main():
     parser.add_argument('-n_layers', type=int, default=6)
     parser.add_argument('-learning_rate', default=1e-4, type=float, help="learning rate")
     parser.add_argument('-warmup','--n_warmup_steps', type=int, default=4000)
-    parser.add_argument('-max_seq_len', type=int, default=100)
     parser.add_argument('-lr_mul', type=float, default=2.0)
     parser.add_argument('-seed', type=int, default=None)
 
@@ -345,7 +344,7 @@ def main():
         pad_idx=opt.src_pad_idx, dropout=opt.dropout, scale_emb=scale_emb)
 
 
-    tst_encoder.load_state_dict(torch.load(opt.tst_model)['encoder'])
+    tst_encoder.load_state_dict(torch.load("output/vae/new_tst/spm_bpe_tst.chkpt")['encoder'])
     tst_encoder_dict = tst_encoder.state_dict()
     nmt_encoder_dict = nmt_encoder.state_dict()
     tst_encoder_dict = {k: v for k, v in tst_encoder_dict.items() if k in nmt_encoder_dict}
@@ -407,7 +406,7 @@ def main():
     #     optim.Adam(transformer.parameters(), betas=(0.9, 0.98), eps=1e-09),
     #     opt.lr_mul, opt.d_model, opt.n_warmup_steps)
 
-    learning_rate = opt.learning_rate
+    learning_rate = 0.0001
     optimizer = optim.Adam(transformer.parameters(), lr=learning_rate)
 
     lr_scheduler = get_scheduler(
@@ -418,6 +417,8 @@ def main():
     )
 
     train(transformer, training_data, validation_data, optimizer, lr_scheduler, device, opt)
+
+    train(transformer, training_data, validation_data, optimizer, device, opt)
 
 
 def prepare_dataloaders_from_bpe_files(opt, device):
@@ -459,7 +460,10 @@ def prepare_dataloaders(opt, device):
     data = pickle.load(open(opt.data_pkl, 'rb'))
     # tst_data = pickle.load(open(opt.tst_data_pkl, 'rb'))
 
-    opt.max_token_seq_len = opt.max_seq_len
+    opt.max_token_seq_len = len(data['train'])
+    print(opt.max_token_seq_len)
+    print(len(data['test']))
+    print( len(data['valid']))
     opt.src_pad_idx = data['vocab']['src'].vocab.stoi[Constants.PAD_WORD]
     opt.trg_pad_idx = data['vocab']['trg'].vocab.stoi[Constants.PAD_WORD]
 
