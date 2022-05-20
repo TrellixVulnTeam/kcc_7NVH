@@ -38,29 +38,6 @@ def load_model(opt, device):
         model.load_state_dict(checkpoint['model'])
         print('[Info] Trained model state loaded.')
         return model
-    elif opt.split:
-        model = DualVAETransformer(
-            opt.task_type,
-            model_opt.src_vocab_size,
-            model_opt.trg_vocab_size,
-
-            model_opt.src_pad_idx,
-            model_opt.trg_pad_idx,
-
-            trg_emb_prj_weight_sharing=model_opt.proj_share_weight,
-            emb_src_trg_weight_sharing=model_opt.embs_share_weight,
-            d_k=model_opt.d_k,
-            d_v=model_opt.d_v,
-            d_model=model_opt.d_model,
-            d_latent=model_opt.d_latent,
-            d_word_vec=model_opt.d_word_vec,
-            d_inner=model_opt.d_inner_hid,
-            n_layers=model_opt.n_layers,
-            n_head=model_opt.n_head,
-            dropout=model_opt.dropout).to(device)
-        model.load_state_dict(checkpoint['model'])
-        print('[Info] Trained model state loaded.')
-        return model
     else:
         model = Transformer(
             model_opt.src_vocab_size,
