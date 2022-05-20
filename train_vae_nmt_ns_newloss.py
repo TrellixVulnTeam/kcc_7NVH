@@ -20,6 +20,8 @@ from transformer.Models import Transformer, VAETransformer, Encoder
 from transformer.Optim import ScheduledOptim
 from loss import kl_loss, kl_loss_2
 
+import pdb
+
 
 
 def cal_performance(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smoothing=False):
@@ -54,7 +56,7 @@ def cal_loss(pred, gold, trg_pad_idx, mean, logv, variational, epoch, smoothing=
         smoothing_loss = smoothing_loss.masked_select(non_pad_mask).sum()  # average later
         if variational is True:
             # ce_loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
-            KL_loss  = kl_loss(pred, gold, mean, logv, trg_pad_idx)   # k=0.0025, x0=2500)
+            KL_loss  = kl_loss(pred, gold, mean, logv, trg_pad_idx, epoch, 0.0025, 2500)   # k=0.0025, x0=2500)
             return smoothing_loss + KL_loss
         return smoothing_loss
 
@@ -88,6 +90,7 @@ def train_epoch(model, training_data, optimizer, opt, epoch, device, smoothing):
         # prepare data
         src_seq = patch_src(batch.src, opt.src_pad_idx).to(device)
         trg_seq, gold = map(lambda x: x.to(device), patch_trg(batch.trg, opt.trg_pad_idx))
+        # trg_seq, gold = map(lambda x: x.to(device), patch_trg(batch.src, opt.trg_pad_idx))
 
         # forward
         optimizer.zero_grad()
@@ -414,6 +417,7 @@ def prepare_dataloaders(opt, device):
     batch_size = opt.batch_size
     data = pickle.load(open(opt.data_pkl, 'rb'))
 
+
     opt.max_token_seq_len = data['settings'].max_len
     opt.src_pad_idx = data['vocab']['src'].vocab.stoi[Constants.PAD_WORD]
     opt.trg_pad_idx = data['vocab']['trg'].vocab.stoi[Constants.PAD_WORD]
@@ -423,11 +427,10 @@ def prepare_dataloaders(opt, device):
 
 
     #========= Preparing Model =========#
-    if opt.embs_share_weight:
-        assert data['vocab']['src'].vocab.stoi == data['vocab']['trg'].vocab.stoi, \
-            'To sharing word embedding the src/trg word2idx table shall be the same.'
-
-    fields = {'src': data['vocab']['src'], 'trg':data['vocab']['trg']}
+    # if opt.embs_share_weight:
+    #     assert data['vocab']['src'].vocab.stoi == data['vocab']['trg'].vocab.stoi, \
+    #         'To sharing word embedding the src/trg word2idx table shall be the same.'
+    fields = {'src': data['vocab']['src'], 'trg': data['vocab']['trg']}
 
     train = Dataset(examples=data['train'], fields=fields)
     val = Dataset(examples=data['valid'], fields=fields)

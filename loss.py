@@ -18,12 +18,13 @@ def kl_loss_2(mu, logv, epoch, k, xo):
     KL_weight = kl_anneal_function(epoch, k, xo)
     return KL_loss*KL_weight
 
-def kl_loss(out, target, mean, logv, trg_pad_idx):
+def kl_loss(out, target, mean, logv, trg_pad_idx, epoch, k, xo):
     # mean, logv; [batch, seq_len, latent_size]
     # reproduction_loss = F.cross_entropy(out, target, ignore_index=trg_pad_idx)
     KLD = (-0.5 * torch.sum(1 + logv - mean.pow(2) - logv.exp(), 1)).mean().squeeze()
+    KL_weight = kl_anneal_function(epoch, k, xo)
     # KLD = -0.5 * torch.sum(1 + logv - mean.pow(2) - logv.exp())
-    return KLD
+    return KLD*KL_weight
 
 def ce_loss(out, target):
     CE = nn.CrossEntropyLoss(ignore_index=0)
