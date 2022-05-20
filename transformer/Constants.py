@@ -1,4 +1,4 @@
-PAD_WORD = '<blank>'
-UNK_WORD = '<unk>'
-BOS_WORD = '<s>'
-EOS_WORD = '</s>'
+PAD_WORD = '[pad]'
+UNK_WORD = '[unk]'
+BOS_WORD = '[bos]'
+EOS_WORD = '[eos]'

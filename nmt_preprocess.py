@@ -254,11 +254,12 @@ def main_wo_bpe():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-tokenizer', required=True, choices=['spacy', 'spm'])
-    parser.add_argument('-tk_type', required=True, choices=['unigram', 'bpe'])
+    parser.add_argument('-tk_type', required=True, choices=['unigram', 'bpe', 'spacy'])
     parser.add_argument('-lang_src', choices=spacy_support_langs)
+    parser.add_argument('-lang_trg', choices=spacy_support_langs)
     parser.add_argument('-save_data', required=True)
-    parser.add_argument('-data_type', type=str, default=None, choices=["gyafc", "korpora", "aihub"])
-    parser.add_argument('-data_dir', type=str, default=None, choices=[".data/gyafc", ".data/korpora", ".data/aihub"])
+    parser.add_argument('-data_type', type=str, default=None, choices=["gyafc", "korpora", "aihub", "wmt16"])
+    parser.add_argument('-data_dir', type=str, default=None, choices=[".data/gyafc", ".data/korpora", ".data/aihub", ".data/wmt16", ".data/multi30k"])
     parser.add_argument('-train_path', type=str, default="train.csv")
     parser.add_argument('-valid_path', type=str, default="valid.csv")
     parser.add_argument('-test_path', type=str, default="test.csv")
@@ -277,14 +278,25 @@ def main_wo_bpe():
 
 
     if opt.tokenizer == "spacy":
-        src_lang_model = spacy.load(opt.lang_src)
-        trg_lang_model = Mecab()
+        if opt.data_type == "wmt16":
+            src_lang_model = spacy.load(opt.lang_src)
+            trg_lang_model = spacy.load(opt.lang_trg)
 
-        def tokenize_src(text):
-            return [tok.text for tok in src_lang_model.tokenizer(text)]
+            def tokenize_src(text):
+                return [tok.text for tok in src_lang_model.tokenizer(text)]
 
-        def tokenize_trg(text):
-            return [tok for tok in trg_lang_model.morphs(text)]
+            def tokenize_trg(text):
+                return [tok.text for tok in trg_lang_model.tokenizer(text)]
+
+        elif opt.data_type == "aihub" or "korpora":
+            src_lang_model = spacy.load(opt.lang_src)
+            trg_lang_model = Mecab()
+
+            def tokenize_src(text):
+                return [tok.text for tok in src_lang_model.tokenizer(text)]
+
+            def tokenize_trg(text):
+                return [tok for tok in trg_lang_model.morphs(text)]
 
     elif opt.tokenizer == "spm":
         if opt.data_type == "korpora":
