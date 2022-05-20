@@ -132,13 +132,13 @@ def main():
     
     device = torch.device('cuda' if opt.cuda else 'cpu')
     translator = Translator(opt,
-        model=load_model(opt, device),
-        beam_size=opt.beam_size,
-        max_seq_len=opt.max_seq_len,
-        src_pad_idx=opt.src_pad_idx,
-        trg_pad_idx=opt.trg_pad_idx,
-        trg_bos_idx=opt.trg_bos_idx,
-        trg_eos_idx=opt.trg_eos_idx).to(device)
+                            model=load_model(opt, device),
+                            beam_size=opt.beam_size,
+                            max_seq_len=opt.max_seq_len,
+                            src_pad_idx=opt.src_pad_idx,
+                            trg_pad_idx=opt.trg_pad_idx,
+                            trg_bos_idx=opt.trg_bos_idx,
+                            trg_eos_idx=opt.trg_eos_idx).to(device)
 
     unk_idx = SRC.vocab.stoi[SRC.unk_token]
     with open(os.path.join(opt.output, opt.file_name), 'w') as f:
