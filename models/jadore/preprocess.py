@@ -84,7 +84,7 @@ def download_and_extract(download_dir, url, src_filename, trg_filename):
                 if not is_within_directory(path, member_path):
                     raise Exception("Attempted Path Traversal in Tar File")
         
-            tar.extractall(path, members, numeric_owner) 
+            tar.extractall(path, members, numeric_owner=numeric_owner) 
             
         
         safe_extract(corpus_tar, download_dir)
